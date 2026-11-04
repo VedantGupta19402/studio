@@ -29,6 +29,26 @@ const PARTICLE_SIZE = 0.6;
 const SHAPE_SCALE = 5;
 const WATER_LEVEL = 0.22;
 
+/* orbit camera (reference algorithm verbatim; constants adapted to our world) */
+const CAMERA_POSITION: [number, number, number] = [5.44, 3.4, 34];
+const ORBIT_RADIUS = Math.hypot(CAMERA_POSITION[0], CAMERA_POSITION[2]);
+const ORBIT_INITIAL_ANGLE = Math.atan2(CAMERA_POSITION[0], CAMERA_POSITION[2]);
+const ORBIT_Y = CAMERA_POSITION[1];
+const ORBIT_CLOSE_FACTOR = 0.6;
+const LOOKAT_OFFSETS: [number, number, number][] = [
+  [0, 0, 0], [0, 2.5, 2.5], [0, 0, 0], [0, 2.5, 2.5], [0, 0, 0],
+];
+const SHAPE_BREAKPOINTS = [0.18, 0.4, 0.65, 0.87];
+const SHAPE_ROTATIONS = [0, 0, 0, -(75 * Math.PI) / 180, 0]; // heart turned, reference grammar
+const easeSmooth = (x: number) => x * x * (3 - 2 * x);
+
+function sceneIndexForProgress(p: number): number {
+  for (let i = SHAPE_BREAKPOINTS.length - 1; i >= 0; i--) {
+    if (p > SHAPE_BREAKPOINTS[i]) return i + 1;
+  }
+  return 0;
+}
+
 const PALETTE = {
   PRIMARY: new THREE.Color("#9047ff"),
   SECONDARY: new THREE.Color("#8844ee"),
@@ -930,10 +950,37 @@ export function createHeroScene(
     renderUniforms.positionTexture.value = bypass ? targetTextures[0] : rtPos[ping].texture;
     renderUniforms.velocityTexture.value = bypass ? targetTextures[0] : rtVel[ping].texture;
 
-    // camera: subtle drift (Target 2 will replace with full driver)
-    const drift = Math.sin(elapsed * 0.12) * 0.4;
-    camera.position.y = 3.2 + drift * 0.4;
-    camera.lookAt(markX(), 6.8, 0);
+    // orbit camera (reference grammar): full revolution, dip closer+lower mid-journey
+    const p = progressRef.value;
+    const angle = ORBIT_INITIAL_ANGLE + p * Math.PI * 2;
+    const dip = Math.sin(p * Math.PI) ** 2;
+    const radius = ORBIT_RADIUS - (ORBIT_RADIUS - ORBIT_RADIUS * ORBIT_CLOSE_FACTOR) * dip;
+    const oy = ORBIT_Y - 5 * dip;
+    camera.position.set(
+      points.position.x + radius * Math.sin(angle),
+      oy,
+      radius * Math.cos(angle),
+    );
+    // lookAt: particles anchor + per-scene offsets (smoothstepped between stops)
+    const stops = LOOKAT_OFFSETS;
+    const t = easeSmooth(p) * (stops.length - 1);
+    const seg = Math.min(Math.floor(t), stops.length - 2);
+    const f = t - seg;
+    const a = stops[seg];
+    const b = stops[seg + 1];
+    camera.lookAt(
+      points.position.x + a[0] + (b[0] - a[0]) * f,
+      points.position.y + a[1] + (b[1] - a[1]) * f,
+      points.position.z + a[2] + (b[2] - a[2]) * f,
+    );
+    // per-shape group rotation (heart turned -75deg, reference grammar)
+    const rotT = easeSmooth(p) * (SHAPE_ROTATIONS.length - 1);
+    const rotSeg = Math.min(Math.floor(rotT), SHAPE_ROTATIONS.length - 2);
+    const rotF = rotT - rotSeg;
+    const ry =
+      SHAPE_ROTATIONS[rotSeg] + (SHAPE_ROTATIONS[rotSeg + 1] - SHAPE_ROTATIONS[rotSeg]) * rotF;
+    points.rotation.y = ry;
+    reflection.rotation.y = ry;
 
     // dust drift
     const dp = dustGeo.attributes.position as THREE.BufferAttribute;

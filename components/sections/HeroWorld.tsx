@@ -64,10 +64,15 @@ export default function HeroWorld() {
           end: "bottom bottom",
           scrub: true,
           onUpdate: (self) => {
-            const pos = Math.max(0, Math.min(0.99999, self.progress)) * SCENE_COUNT;
-            const idx = Math.min(SCENE_COUNT - 1, Math.floor(pos));
+            // reference breakpoints: scenes are unequal spans [0.18, 0.4, 0.65, 0.87]
+            const BREAKS = [0.18, 0.4, 0.65, 0.87];
+            let idx = 0;
+            for (let i = BREAKS.length - 1; i >= 0; i--) {
+              if (self.progress > BREAKS[i]) { idx = i + 1; break; }
+            }
             // spring-based morph: shape swap + burst; physics does the travel
             scene?.setScene(idx);
+            scene?.setProgress(self.progress);
             if (idx !== activeRef.current) {
               activeRef.current = idx;
               setActive(idx);
@@ -117,7 +122,7 @@ export default function HeroWorld() {
         />
 
         {/* chrome — kicker (scene 1 only) */}
-        <div className="absolute bottom-[38vh] left-6 z-10 md:left-12">
+        <div className={}>
           <p className="mono-label flex items-center gap-2 text-[color:var(--violet-2)]">
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-[color:var(--ok)]" />
             {SITE.kicker}
