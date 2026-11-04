@@ -44,8 +44,9 @@ export default function Intro() {
           <p className="display text-[clamp(1.7rem,3.4vw,3.1rem)] leading-[1.15] text-[color:var(--paper)]">
             {INTRO.statement.split(" ").map((w, i) => (
               <span key={i} data-word className="inline-block">
-                {w}{" "}
+                {w}
               </span>
+              {" "}
             ))}
           </p>
         </div>
