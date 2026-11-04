@@ -325,16 +325,27 @@ export function createHeroScene(
   const reflMat = mat.clone();
   reflMat.uniforms = { ...uniforms, uOpacity: { value: 0.16 } };
   const reflection = new THREE.Points(geo, reflMat);
-  reflection.position.set(0.55, -3.79, 0);
-  reflection.scale.y = -0.5;
+  reflection.position.set(0.55, -2.24, 0);
+  reflection.scale.y = -0.42;
   reflection.renderOrder = 0;
   scene.add(reflection);
 
   // water plane
-  const water = new THREE.Mesh(
-    new THREE.PlaneGeometry(70, 5),
-    new THREE.MeshBasicMaterial({ color: 0x0a0814, transparent: true, opacity: 0.6 }),
-  );
+  const waterMat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    vertexShader: SKY_VERT,
+    fragmentShader: /* glsl */ \`
+      varying vec2 vUv;
+      void main() {
+        vec3 top = vec3(0.16, 0.10, 0.30);   // violet sheen at waterline
+        vec3 bottom = vec3(0.031, 0.027, 0.06); // #080710
+        vec3 col = mix(top, bottom, pow(vUv.y, 0.8));
+        gl_FragColor = vec4(col, 0.88 * smoothstep(0.0, 0.35, vUv.y) + 0.12);
+      }
+    \`,
+  });
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(70, 5), waterMat);
   water.position.set(0, -1.62, -0.5);
   water.renderOrder = -1;
   scene.add(water);

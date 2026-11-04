@@ -194,7 +194,7 @@ export default function HeroWorld() {
         </div>
 
         {/* subline under first statement */}
-        <p className="mono-label absolute bottom-[26vh] left-6 z-10 hidden max-w-sm leading-relaxed text-[color:var(--muted)] md:left-12 md:block">
+        <p className={`mono-label absolute bottom-[26vh] left-6 z-10 hidden max-w-sm leading-relaxed transition-opacity duration-500 md:left-12 md:block ${active === 0 ? "opacity-100" : "opacity-0"}`} aria-hidden={active !== 0}>
           {SITE.name} builds client products end-to-end — and ships its own. Live,
           linkable, running.
         </p>
