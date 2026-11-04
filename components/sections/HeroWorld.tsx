@@ -10,6 +10,44 @@ import { HERO_SCENES, HERO_CTA, SITE } from "@/content/opera";
 // progress windows per scene (equal fifths, overlap-free swaps)
 const SCENE_COUNT = HERO_SCENES.length;
 
+/** glowing orb cursor — reference signature (pointer:fine only) */
+function OrbCursor() {
+  const dotRef = useRef<HTMLDivElement>(null);
+  const ringRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!window.matchMedia("(pointer: fine)").matches) return;
+    const dot = dotRef.current!;
+    const ring = ringRef.current!;
+    let tx = -100, ty = -100, dx = -100, dy = -100, rx = -100, ry = -100;
+    const move = (e: PointerEvent) => { tx = e.clientX; ty = e.clientY; };
+    window.addEventListener("pointermove", move);
+    let raf = 0;
+    const tick = () => {
+      dx += (tx - dx) * 0.55;
+      dy += (ty - dy) * 0.55;
+      rx += (tx - rx) * 0.16;
+      ry += (ty - ry) * 0.16;
+      dot.style.transform = `translate(${dx - 5}px, ${dy - 5}px)`;
+      ring.style.transform = `translate(${rx - 19}px, ${ry - 19}px)`;
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      cancelAnimationFrame(raf);
+    };
+  }, []);
+  return (
+    <div aria-hidden className="pointer-events-none fixed inset-0 z-50 hidden [@media(pointer:fine)]:block">
+      <div
+        ref={dotRef}
+        className="absolute left-0 top-0 h-2.5 w-2.5 rounded-full bg-[color:var(--paper)] shadow-[0_0_0_3px_rgba(181,123,255,0.30),0_0_16px_rgba(181,123,255,0.75)]"
+      />
+      <div ref={ringRef} className="absolute left-0 top-0 h-[38px] w-[38px] rounded-full border border-[color:var(--violet-2)]/50" />
+    </div>
+  );
+}
+
 export default function HeroWorld() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -102,6 +140,7 @@ export default function HeroWorld() {
 
   return (
     <div ref={wrapRef} id="hero" className="relative h-[620vh]">
+      <OrbCursor />
       <div className="sticky top-0 h-screen overflow-hidden">
         <canvas
           ref={canvasRef}
