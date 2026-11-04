@@ -122,7 +122,11 @@ export default function HeroWorld() {
         />
 
         {/* chrome — kicker (scene 1 only) */}
-        <div className={}>
+        <div
+          className={`absolute bottom-[38vh] left-6 z-10 transition-opacity duration-500 md:left-12 ${
+            active === 0 ? "opacity-100" : "opacity-0"
+          }`}
+        >
           <p className="mono-label flex items-center gap-2 text-[color:var(--violet-2)]">
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-[color:var(--ok)]" />
             {SITE.kicker}
