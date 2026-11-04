@@ -9,6 +9,11 @@ import { HERO_SCENES, HERO_CTA, SITE } from "@/content/opera";
 
 // progress windows per scene (equal fifths, overlap-free swaps)
 const SCENE_COUNT = HERO_SCENES.length;
+// scene -> particle shape index (shapes: swirl, egg, cube, sphere, tree, ring)
+const SHAPE_OF_SCENE = HERO_SCENES.map((s) => {
+  const order = ["swirl", "egg", "cube", "sphere", "tree", "ring"];
+  return order.indexOf(s.shape);
+});
 
 export default function HeroWorld() {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -17,6 +22,13 @@ export default function HeroWorld() {
   const [active, setActive] = useState(0);
   const activeRef = useRef(0);
   const [bursting, setBursting] = useState(false);
+  useEffect(() => {
+    // flash overlay tracks scene changes (covers the morph crossing)
+    if (activeRef.current === 0) return;
+    setBursting(true);
+    const t = setTimeout(() => setBursting(false), 480);
+    return () => clearTimeout(t);
+  }, [active]);
 
   useEffect(() => {
     const reduced = prefersReducedMotion();
@@ -54,19 +66,17 @@ export default function HeroWorld() {
           end: "bottom bottom",
           scrub: true,
           onUpdate: (self) => {
-            scene?.setProgress(self.progress);
-            const idx = Math.min(
-              SCENE_COUNT - 1,
-              Math.floor(self.progress * SCENE_COUNT * 0.999),
-            );
+            const pos = Math.max(0, Math.min(0.99999, self.progress)) * SCENE_COUNT;
+            const idx = Math.min(SCENE_COUNT - 1, Math.floor(pos));
+            const frac = pos - idx;
+            // scene-locked morph: target shape + eased within-scene fraction
+            const target = SHAPE_OF_SCENE[idx];
+            const next = SHAPE_OF_SCENE[Math.min(SCENE_COUNT - 1, idx + 1)];
+            const m = target + (next - target) * frac;
+            scene?.setMorph(m);
             if (idx !== activeRef.current) {
-              const crossed = idx !== activeRef.current;
               activeRef.current = idx;
               setActive(idx);
-              if (crossed) {
-                setBursting(true);
-                setTimeout(() => setBursting(false), 520);
-              }
             }
           },
         });

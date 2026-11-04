@@ -6,6 +6,7 @@ import * as THREE from "three";
 
 export type HeroSceneHandle = {
   setProgress: (p: number) => void; // 0..1 across the whole pinned journey
+  setMorph: (m: number) => void; // in shape units 0..5 (scene-locked)
   setPointer: (nx: number, ny: number) => void; // NDC -1..1
   burst: () => void; // trigger implosion flash envelope
   resize: (w: number, h: number) => void;
@@ -76,10 +77,17 @@ function shapeSphere(rand: () => number): THREE.Vector3 {
 }
 
 function heartXZ(rand: () => number): [number, number] {
-  // 2D heart implicit fill (rejection), unit-ish scale
+  // 70% outline band + 30% interior fill — defined heart silhouette
+  if (rand() < 0.7) {
+    const t = rand() * Math.PI * 2;
+    const j = 0.94 + rand() * 0.12;
+    const hx = 1.05 * Math.pow(Math.sin(t), 3) * j;
+    const hy = -(0.86 * Math.cos(t) - 0.33 * Math.cos(2 * t) - 0.13 * Math.cos(3 * t) - 0.065 * Math.cos(4 * t)) * j;
+    return [hx, hy];
+  }
   for (let i = 0; i < 40; i++) {
-    const x = rand() * 2.4 - 1.2;
-    const y = rand() * 2.4 - 1.4;
+    const x = rand() * 2.2 - 1.1;
+    const y = rand() * 2.2 - 1.3;
     const q =
       Math.pow(x * x + y * y - 0.9, 3) - x * x * Math.pow(y, 3) - 0.1125 * Math.pow(y, 3) * x * x;
     if (q < 0) return [x, y];
@@ -382,20 +390,29 @@ export function createHeroScene(
 
   // state
   let progress = 0;
+  let morphTargetUnits = 0;
   let pointerTarget = new THREE.Vector3(99, 99, 99);
   let burstT = 1; // >=1 = idle
   let raf = 0;
+  let morphUnitsDirty = false;
+  let segPrev = 0;
   const clock = new THREE.Clock();
 
   const tick = () => {
     const t = clock.getElapsedTime();
     uniforms.uTime.value = t;
-    // smooth morph toward progress-driven target
-    const targetMorph = progress * (SHAPE_COUNT - 1);
+    // smooth morph toward target (scene-locked units win when set)
+    const targetMorph = morphUnitsDirty ? morphTargetUnits : progress * (SHAPE_COUNT - 1);
+    morphUnitsDirty = false;
     uniforms.uMorph.value += (targetMorph - uniforms.uMorph.value) * 0.075;
     // damp pointer
     (uniforms.uPointer.value as THREE.Vector3).lerp(pointerTarget, 0.08);
     // burst envelope
+    const segNow = Math.floor(uniforms.uMorph.value + 0.001);
+    if (segNow !== segPrev) {
+      segPrev = segNow;
+      if (burstT >= 1) burstT = 0; // implosion on integer shape crossing
+    }
     if (burstT < 1) {
       burstT = Math.min(1, burstT + 0.016 * 2.2);
       const env = Math.sin(Math.min(1, burstT) * Math.PI);
@@ -438,10 +455,11 @@ export function createHeroScene(
 
   return {
     setProgress(p) {
-      const prev = Math.floor(progress * (SHAPE_COUNT - 1));
       progress = Math.max(0, Math.min(1, p));
-      const now = Math.floor(progress * (SHAPE_COUNT - 1));
-      if (now !== prev && burstT >= 1) burstT = 0; // implosion on shape change
+    },
+    setMorph(m) {
+      morphTargetUnits = Math.max(0, Math.min(SHAPE_COUNT - 1, m));
+      morphUnitsDirty = true;
     },
     setPointer(nx, ny) {
       // unproject NDC at cloud plane

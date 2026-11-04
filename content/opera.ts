@@ -39,7 +39,7 @@ export const HERO_SCENES: HeroScene[] = [
   { id: "s1", lead: "We don't pitch.", caps: "WE SHIP.", shape: "swirl" },
   { id: "s2", lead: "We", caps: "BUILD CLIENT PRODUCTS —\nAND SHIP OUR OWN.", shape: "egg" },
   { id: "s3", mono: "PROOF", caps: "LIVE, LINKABLE,\nRUNNING.", shape: "cube" },
-  { id: "s4", lead: "Small team.", caps: "SERIOUS CRAFT.", shape: "sphere" },
+  { id: "s4", lead: "Small team.", caps: "SERIOUS CRAFT.", shape: "tree" },
   { id: "s5", lead: "Every product", caps: "DESERVES A PREMIERE.", shape: "ring" },
 ] as const;
 
