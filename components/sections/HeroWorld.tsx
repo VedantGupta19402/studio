@@ -174,7 +174,7 @@ export default function HeroWorld() {
         </div>
 
         {/* CTAs */}
-        <div className="absolute bottom-[4vh] left-6 z-10 flex gap-3 md:left-12">
+        <div className="absolute bottom-[4vh] left-6 right-6 z-10 flex flex-col gap-3 sm:left-12 sm:right-auto sm:flex-row md:left-12">
           {HERO_CTA.map((c) => (
             <a
               key={c.href + c.label}
@@ -191,7 +191,7 @@ export default function HeroWorld() {
         </div>
 
         {/* scroll cue */}
-        <div className="absolute bottom-0 left-1/2 z-10 -translate-x-1/2">
+        <div className="absolute bottom-0 left-1/2 z-10 hidden -translate-x-1/2 sm:block">
           <div className="flex flex-col items-center gap-2 pb-4">
             <span className="mono-label text-[color:var(--muted)]">Scroll</span>
             <span className="block h-10 w-px animate-pulse bg-[color:var(--hairline)]" />
@@ -199,7 +199,7 @@ export default function HeroWorld() {
         </div>
 
         {/* est strip */}
-        <div className="absolute bottom-6 right-6 z-10 md:right-12">
+        <div className="absolute bottom-6 right-6 z-10 hidden md:right-12 sm:block">
           <p className="mono-label text-[color:var(--muted)]">{SITE.est}</p>
         </div>
 

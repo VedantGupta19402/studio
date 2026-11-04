@@ -443,6 +443,10 @@ export function createHeroScene(
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    // portrait viewports: bring the mark toward center (spec §5 mobile)
+    const cx = camera.aspect < 0.9 ? 0.15 : 0.55;
+    points.position.x = cx;
+    reflection.position.x = cx;
   };
 
   if (reduced) {
