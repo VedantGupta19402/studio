@@ -17,7 +17,7 @@ export type HeroSceneHandle = {
 const SPRING_STIFFNESS = 0.6;
 const VISCOSITY = 0.15;
 const VELOCITY_DAMPING = 0.93;
-const FLOW_STRENGTH = 0.0025;
+const FLOW_STRENGTH = 0.00008;
 const FLOW_SCALE = 0.9;
 const FLOW_SPEED = 0.5;
 const REPULSION_STRENGTH = 0.005;
@@ -58,7 +58,7 @@ function mulberry32(seed: number) {
 }
 
 function sampleCube(n: number, rand: () => number): Float32Array {
-  const s = SHAPE_SCALE * 0.6;
+  const s = 0.62;
   const out = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) {
     const face = Math.floor(rand() * 6);
@@ -74,7 +74,7 @@ function sampleCube(n: number, rand: () => number): Float32Array {
 }
 
 function sampleSphere(n: number, rand: () => number): Float32Array {
-  const r = SHAPE_SCALE * 0.6;
+  const r = 0.62;
   const out = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) {
     const u = rand() * Math.PI * 2;
@@ -86,7 +86,7 @@ function sampleSphere(n: number, rand: () => number): Float32Array {
 }
 
 function sampleHeart(n: number, rand: () => number): Float32Array {
-  const S = SHAPE_SCALE * 0.63;
+  const S = 0.46;
   const out = new Float32Array(n * 3);
   let i = 0;
   let guard = 0;
@@ -107,8 +107,8 @@ function sampleHeart(n: number, rand: () => number): Float32Array {
 }
 
 function sampleTorus(n: number, rand: () => number): Float32Array {
-  const R = SHAPE_SCALE * 0.9;
-  const r = SHAPE_SCALE * 0.3;
+  const R = 0.9;
+  const r = 0.3;
   const out = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) {
     const u = rand() * Math.PI * 2;
@@ -122,36 +122,31 @@ function sampleTorus(n: number, rand: () => number): Float32Array {
   return out;
 }
 
-/** Ø logo glyph sampled from canvas text (our mark = our "logo shape") */
+/** Ø mark — procedural ring + slash (deterministic, no canvas/fonts) */
 function sampleGlyph(n: number, rand: () => number): Float32Array {
-  const S = 512;
-  const cv = document.createElement("canvas");
-  cv.width = S;
-  cv.height = S;
-  const ctx = cv.getContext("2d", { willReadFrequently: true })!;
-  ctx.fillStyle = "#fff";
-  ctx.font = `700 ${Math.floor(S * 0.82)}px Georgia, "Times New Roman", serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText("Ø", S / 2, S / 2 + S * 0.03);
-  const img = ctx.getImageData(0, 0, S, S).data;
-  const solid: number[] = [];
-  for (let y = 0; y < S; y++)
-    for (let x = 0; x < S; x++) if (img[(y * S + x) * 4 + 3] > 140) solid.push(y * S + x);
-  const H = SHAPE_SCALE * 1.05;
-  const px = H / S;
   const out = new Float32Array(n * 3);
+  const R = 0.34;
+  const band = 0.075;
+  const slashTilt = (68 * Math.PI) / 180;
   for (let i = 0; i < n; i++) {
-    const p = solid.length > 0 ? solid[Math.floor(rand() * solid.length)] : 0;
-    const gx = (p % S) - S / 2;
-    const gy = S / 2 - Math.floor(p / S);
-    out.set([gx * px + (rand() - 0.5) * 0.22, gy * px + (rand() - 0.5) * 0.22, (rand() - 0.5) * 0.9], i * 3);
+    if (rand() < 0.32) {
+      // slash
+      const t = rand() * 2 - 1;
+      const x = Math.sin(slashTilt) * t * R * 1.15;
+      const y = Math.cos(slashTilt) * t * R * 1.15;
+      out.set([x + (rand() - 0.5) * 0.05, y + (rand() - 0.5) * 0.05, (rand() - 0.5) * 0.16], i * 3);
+    } else {
+      // ring band (slight thickness variation for organic density)
+      const t = rand() * Math.PI * 2;
+      const rr = R + (rand() - 0.5) * band * 2 * (0.7 + rand() * 0.6);
+      out.set([Math.cos(t) * rr, Math.sin(t) * rr, (rand() - 0.5) * 0.34], i * 3);
+    }
   }
   return out;
 }
 
 /* ---------- GPGPU sim (two passes: velocity, then position — no MRT needed) ---------- */
-const SIM_VERT = `in vec3 position; in vec2 uv; out vec2 vUv;
+const SIM_VERT = `out vec2 vUv;
 void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
 
 const SIM_COMMON = /* glsl */ `
@@ -468,10 +463,10 @@ void main() {
   vec3 up = abs(radial.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
   vec3 tangent = normalize(cross(radial, up));
   vec3 bitangent = cross(radial, tangent);
-  float swirlRadius = (0.9 + aPhase * 0.5) * (1.0 - progress);
+  float swirlRadius = (0.18 + aPhase * 0.1) * (1.0 - progress);
   pos += tangent * sin(swirlAngle) * swirlRadius + bitangent * cos(swirlAngle) * swirlRadius;
   float waveFreq = 3.0 + aPhase * 4.0;
-  float waveAmp = 0.4 * (1.0 - progress * 0.8);
+  float waveAmp = 0.08 * (1.0 - progress * 0.8);
   pos.x += sin(age * waveFreq + aPhase * 6.28) * waveAmp;
   pos.y += cos(age * waveFreq * 0.7 + aPhase * 4.0) * waveAmp * 0.6;
   float fadeIn = smoothstep(0.0, 0.05, progress);
@@ -519,8 +514,8 @@ export function createHeroScene(
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(50, canvas.clientWidth / canvas.clientHeight, 0.1, 300);
-  camera.position.set(0.6, 3.2, 30);
-  camera.lookAt(2.2, 4.6, 0);
+  camera.position.set(0.6, 3.4, 34);
+  camera.lookAt(4.2, 6.8, 0);
 
   const tierHigh = (navigator.hardwareConcurrency || 4) >= 8;
   const TEX = tierHigh ? 280 : 220; // reference: 280 high / 220 low
@@ -750,7 +745,7 @@ export function createHeroScene(
     centerGlowPulse: { value: 1 },
     GLOW_COLOR_U: { value: GLOW_COLOR },
     CENTER_GLOW_COLOR_U: { value: CENTER_GLOW_COLOR },
-    CENTER_GLOW_OPACITY_U: { value: 1 },
+    CENTER_GLOW_OPACITY_U: { value: 0.35 },
     TINT_COLOR_U: { value: TINT_COLOR },
     ENERGY_COLOR_U: { value: ENERGY_COLOR },
     burstIntensity: { value: 0 },
@@ -772,18 +767,20 @@ export function createHeroScene(
       depthTest: true,
     });
   const pointsMat = makePointsMat(1, true);
-  const reflMat = makePointsMat(0.16, false);
+  const reflMat = makePointsMat(0.10, false);
 
+  const WORLD_SCALE = 8.2; // unit-space sim -> world-size mark (reference ~35% frame height)
   const points = new THREE.Points(geo, pointsMat);
-  const markX = () => (camera.aspect < 0.9 ? 0.5 : 2.2);
-  points.position.set(markX(), WATER_LEVEL + 4.5, 0);
+  const markX = () => (camera.aspect < 0.9 ? 0.8 : 4.2);
+  points.position.set(markX(), WATER_LEVEL + 7.4, 0);
+  points.scale.setScalar(WORLD_SCALE);
   points.frustumCulled = false;
   points.renderOrder = 1;
   scene.add(points);
 
   const reflection = new THREE.Points(geo, reflMat);
-  reflection.position.set(markX(), 2 * WATER_LEVEL - (WATER_LEVEL + 4.5), 0);
-  reflection.scale.y = -1;
+  reflection.position.set(markX(), 2 * WATER_LEVEL - (WATER_LEVEL + 7.4), 0);
+  reflection.scale.set(WORLD_SCALE, -WORLD_SCALE, WORLD_SCALE);
   reflection.frustumCulled = false;
   reflection.renderOrder = 0;
   scene.add(reflection);
@@ -824,6 +821,7 @@ export function createHeroScene(
   });
   const embers = new THREE.Points(emberGeo, emberMat);
   embers.position.copy(points.position);
+  embers.scale.setScalar(WORLD_SCALE);
   embers.frustumCulled = false;
   embers.renderOrder = 2;
   scene.add(embers);
@@ -870,9 +868,9 @@ export function createHeroScene(
         eSpawnPos[k * 3 + 1] = sy;
         eSpawnPos[k * 3 + 2] = sz;
         const len = Math.max(0.001, Math.hypot(sx, sy, sz));
-        const sp = 2.5 + Math.random() * 4.5;
+        const sp = 0.55 + Math.random() * 1.0;
         eVel[k * 3] = (sx / len) * sp + (Math.random() - 0.5) * 2;
-        eVel[k * 3 + 1] = Math.abs(sy / len) * sp * 0.7 + 2.5 + Math.random() * 2.5;
+        eVel[k * 3 + 1] = Math.abs(sy / len) * sp * 0.7 + 0.5 + Math.random() * 0.6;
         eVel[k * 3 + 2] = (sz / len) * sp * 0.5;
       }
     }
@@ -928,13 +926,14 @@ export function createHeroScene(
     renderer.setRenderTarget(null);
     ping = 1 - ping;
 
-    renderUniforms.positionTexture.value = rtPos[ping].texture;
-    renderUniforms.velocityTexture.value = rtVel[ping].texture;
+    const bypass = (window as unknown as { __bypassSim?: boolean }).__bypassSim;
+    renderUniforms.positionTexture.value = bypass ? targetTextures[0] : rtPos[ping].texture;
+    renderUniforms.velocityTexture.value = bypass ? targetTextures[0] : rtVel[ping].texture;
 
     // camera: subtle drift (Target 2 will replace with full driver)
     const drift = Math.sin(elapsed * 0.12) * 0.4;
     camera.position.y = 3.2 + drift * 0.4;
-    camera.lookAt(markX(), 4.6, 0);
+    camera.lookAt(markX(), 6.8, 0);
 
     // dust drift
     const dp = dustGeo.attributes.position as THREE.BufferAttribute;

@@ -26,6 +26,9 @@ export default function HeroWorld() {
   }, [active]);
 
   useEffect(() => {
+    // deterministic start: never restore a mid-journey scroll position
+    if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+    window.scrollTo(0, 0);
     const reduced = prefersReducedMotion();
     const { gsap, ScrollTrigger } = registerGsap();
     const stopLenis = initLenis();
