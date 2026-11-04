@@ -335,7 +335,7 @@ export function createHeroScene(
     transparent: true,
     depthWrite: false,
     vertexShader: SKY_VERT,
-    fragmentShader: /* glsl */ \`
+    fragmentShader: /* glsl */ `
       varying vec2 vUv;
       void main() {
         vec3 top = vec3(0.16, 0.10, 0.30);   // violet sheen at waterline
@@ -343,7 +343,7 @@ export function createHeroScene(
         vec3 col = mix(top, bottom, pow(vUv.y, 0.8));
         gl_FragColor = vec4(col, 0.88 * smoothstep(0.0, 0.35, vUv.y) + 0.12);
       }
-    \`,
+    `,
   });
   const water = new THREE.Mesh(new THREE.PlaneGeometry(70, 5), waterMat);
   water.position.set(0, -1.62, -0.5);
