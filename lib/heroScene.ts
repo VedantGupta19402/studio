@@ -31,7 +31,7 @@ function shapeSwirl(rand: () => number): THREE.Vector3 {
   // broken torus band — the opening "swirl"
   const t = rand() * Math.PI * 1.55 - Math.PI * 0.28; // gap in the ring
   const R = 1.15;
-  const r = 0.16 + rand() * 0.22;
+  const r = 0.06 + rand() * 0.14;
   const a = t + rand() * 0.6 - 0.3;
   return new THREE.Vector3(
     Math.cos(a) * (R + (rand() - 0.5) * r),
@@ -176,7 +176,7 @@ void main() {
 
   vec4 mv = modelViewMatrix * vec4(pos, 1.0);
   float breathe = 0.85 + 0.3 * sin(t * 0.9 + aPhase * 6.2831);
-  gl_PointSize = aSize * breathe * uPixelRatio * (240.0 / max(0.1, -mv.z));
+  gl_PointSize = aSize * breathe * uPixelRatio * (8.5 / max(0.1, -mv.z));
   gl_Position = projectionMatrix * mv;
 
   vRadial = length(pos) / 1.6;
@@ -268,10 +268,11 @@ export function createHeroScene(
 
   // sky gradient plane
   const sky = new THREE.Mesh(
-    new THREE.PlaneGeometry(46, 26),
+    new THREE.PlaneGeometry(70, 40),
     new THREE.ShaderMaterial({ vertexShader: SKY_VERT, fragmentShader: SKY_FRAG, depthWrite: false }),
   );
-  sky.position.set(0, 0.4, -9);
+  sky.position.set(0, 0.2, -10);
+  sky.renderOrder = -3;
   scene.add(sky);
 
   // particles
@@ -292,7 +293,7 @@ export function createHeroScene(
   const sizes = new Float32Array(count);
   for (let i = 0; i < count; i++) {
     phases[i] = rand();
-    sizes[i] = 1.1 + rand() * 2.1;
+    sizes[i] = 0.7 + rand() * 1.7;
   }
   geo.setAttribute("position", new THREE.BufferAttribute(shapes[0].slice(), 3));
   for (let s = 0; s < SHAPE_COUNT; s++) geo.setAttribute(`aT${s}`, new THREE.BufferAttribute(shapes[s], 3));
@@ -317,22 +318,25 @@ export function createHeroScene(
   });
   const points = new THREE.Points(geo, mat);
   points.position.set(0.55, 0.55, 0); // center-right of frame (Emotion composition)
+  points.renderOrder = 1;
   scene.add(points);
 
   // water reflection — mirrored cloud, dimmed
   const reflMat = mat.clone();
   reflMat.uniforms = { ...uniforms, uOpacity: { value: 0.16 } };
   const reflection = new THREE.Points(geo, reflMat);
-  reflection.position.set(0.55, -1.98, 0);
-  reflection.scale.y = -0.55;
+  reflection.position.set(0.55, -3.79, 0);
+  reflection.scale.y = -0.5;
+  reflection.renderOrder = 0;
   scene.add(reflection);
 
   // water plane
   const water = new THREE.Mesh(
-    new THREE.PlaneGeometry(46, 8),
-    new THREE.MeshBasicMaterial({ color: 0x0a0814, transparent: true, opacity: 0.82 }),
+    new THREE.PlaneGeometry(70, 5),
+    new THREE.MeshBasicMaterial({ color: 0x0a0814, transparent: true, opacity: 0.6 }),
   );
-  water.position.set(0, -2.25, 0.5);
+  water.position.set(0, -1.62, -0.5);
+  water.renderOrder = -1;
   scene.add(water);
 
   // ridgelines (3 parallax layers, dark silhouettes)
@@ -345,6 +349,7 @@ export function createHeroScene(
     );
     m.position.set(0, -1.1 - i * 0.12, -3.5 + i * 1.4);
     ridges.push(m);
+    m.renderOrder = -2;
     scene.add(m);
   }
 
