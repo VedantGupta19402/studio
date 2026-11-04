@@ -32,15 +32,15 @@ export type HeroScene = {
   /** caps display line(s) */
   caps: string;
   /** particle shape shown during this scene */
-  shape: "swirl" | "egg" | "cube" | "sphere" | "tree" | "ring";
+  shape: "glyph" | "cube" | "sphere" | "heart" | "torus";
 };
 
 export const HERO_SCENES: HeroScene[] = [
-  { id: "s1", lead: "We don't pitch.", caps: "WE SHIP.", shape: "swirl" },
-  { id: "s2", lead: "We", caps: "BUILD CLIENT PRODUCTS —\nAND SHIP OUR OWN.", shape: "egg" },
+  { id: "s1", lead: "We don't pitch.", caps: "WE SHIP.", shape: "glyph" },
+  { id: "s2", lead: "We", caps: "BUILD CLIENT PRODUCTS —\nAND SHIP OUR OWN.", shape: "cube" },
   { id: "s3", mono: "PROOF", caps: "LIVE, LINKABLE,\nRUNNING.", shape: "cube" },
-  { id: "s4", lead: "Small team.", caps: "SERIOUS CRAFT.", shape: "tree" },
-  { id: "s5", lead: "Every product", caps: "DESERVES A PREMIERE.", shape: "ring" },
+  { id: "s4", lead: "Small team.", caps: "SERIOUS CRAFT.", shape: "heart" },
+  { id: "s5", lead: "Every product", caps: "DESERVES A PREMIERE.", shape: "torus" },
 ] as const;
 
 export const HERO_CTA = [

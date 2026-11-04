@@ -9,11 +9,6 @@ import { HERO_SCENES, HERO_CTA, SITE } from "@/content/opera";
 
 // progress windows per scene (equal fifths, overlap-free swaps)
 const SCENE_COUNT = HERO_SCENES.length;
-// scene -> particle shape index (shapes: swirl, egg, cube, sphere, tree, ring)
-const SHAPE_OF_SCENE = HERO_SCENES.map((s) => {
-  const order = ["swirl", "egg", "cube", "sphere", "tree", "ring"];
-  return order.indexOf(s.shape);
-});
 
 export default function HeroWorld() {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -44,7 +39,7 @@ export default function HeroWorld() {
       if (disposed) return;
       const tier = (navigator.hardwareConcurrency || 4) >= 8 ? 16000 : 9000;
       const isMobile = window.innerWidth < 768;
-      scene = createHeroScene(canvas, { count: isMobile ? 7000 : tier, reducedMotion: reduced });
+      scene = createHeroScene(canvas, { reducedMotion: reduced });
       sceneRef.current = scene;
 
       const onResize = () =>
@@ -68,12 +63,8 @@ export default function HeroWorld() {
           onUpdate: (self) => {
             const pos = Math.max(0, Math.min(0.99999, self.progress)) * SCENE_COUNT;
             const idx = Math.min(SCENE_COUNT - 1, Math.floor(pos));
-            const frac = pos - idx;
-            // scene-locked morph: target shape + eased within-scene fraction
-            const target = SHAPE_OF_SCENE[idx];
-            const next = SHAPE_OF_SCENE[Math.min(SCENE_COUNT - 1, idx + 1)];
-            const m = target + (next - target) * frac;
-            scene?.setMorph(m);
+            // spring-based morph: shape swap + burst; physics does the travel
+            scene?.setScene(idx);
             if (idx !== activeRef.current) {
               activeRef.current = idx;
               setActive(idx);
