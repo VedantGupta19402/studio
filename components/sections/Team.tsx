@@ -1,0 +1,91 @@
+"use client";
+// Team — three monogram cards (portraits pending), real names, real links where they exist.
+import { useEffect, useRef } from "react";
+import { registerGsap, prefersReducedMotion } from "@/lib/gsap";
+import { TEAM } from "@/content/opera";
+
+export default function Team() {
+  const ref = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (prefersReducedMotion()) return;
+    const { gsap, ScrollTrigger } = registerGsap();
+    const el = ref.current!;
+    gsap.fromTo(
+      el.querySelectorAll("[data-member]"),
+      { y: 56, opacity: 0 },
+      {
+        y: 0, opacity: 1, duration: 0.9, ease: "power3.out", stagger: 0.1,
+        scrollTrigger: { trigger: el, start: "top 72%" },
+      },
+    );
+    return () => { ScrollTrigger.getAll().forEach((t) => t.kill()); };
+  }, []);
+
+  return (
+    <section ref={ref} id="team" className="hairline-t bg-[color:var(--ink)] px-6 py-28 md:px-12 md:py-40">
+      <div className="mx-auto max-w-7xl">
+        <div className="mb-16 grid gap-8 md:grid-cols-[1fr_auto] md:items-end">
+          <h2 className="display text-[clamp(2.4rem,5.6vw,5rem)] leading-[1.02] text-[color:var(--paper)]">
+            Different expertise.{" "}
+            <span className="block italic text-[color:var(--violet-2)]">Shared ambition.</span>
+          </h2>
+          <p className="mono-label max-w-xs leading-loose text-[color:var(--muted)]">
+            PRODUCT · ENGINEERING · OUTREACH — END TO END, OUTREACH TO DEPLOY.
+          </p>
+        </div>
+
+        <div className="grid gap-6 md:grid-cols-3">
+          {TEAM.map((m) => (
+            <article
+              key={m.id}
+              data-member
+              className="group rounded-3xl border border-[color:var(--hairline)] bg-[color:var(--ink-2)] p-6 transition-all duration-300 hover:-translate-y-1 hover:border-[color:var(--violet-2)]"
+            >
+              {/* monogram tile — placeholder until portraits land */}
+              <div
+                className="flex aspect-[4/5] items-center justify-center rounded-2xl border border-[color:var(--hairline)]"
+                style={{
+                  background:
+                    "radial-gradient(90% 90% at 30% 20%, rgba(181,123,255,0.22) 0%, #161224 60%, #0F0D1A 100%)",
+                }}
+              >
+                <span className="display text-7xl text-[color:var(--paper)]">{m.monogram}</span>
+                <span className="ml-1 h-2 w-2 self-start rounded-full bg-[color:var(--violet-2)] opacity-70 shadow-[0_0_16px_rgba(181,123,255,0.9)]" />
+              </div>
+
+              <h3 className="display mt-6 text-2xl text-[color:var(--paper)]">{m.name}</h3>
+              <p className="mono-label mt-1 text-[color:var(--violet-2)]">{m.role}</p>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                {m.tags.map((t) => (
+                  <span
+                    key={t}
+                    className="rounded-full border border-[color:var(--hairline)] px-3 py-1 font-mono text-[0.65rem] tracking-widest text-[color:var(--muted)]"
+                  >
+                    {t}
+                  </span>
+                ))}
+              </div>
+
+              <div className="mono-label mt-6 flex gap-5">
+                {m.github ? (
+                  <a href={m.github} target="_blank" rel="noopener" className="text-[color:var(--muted)] transition-colors hover:text-[color:var(--paper)]">
+                    GitHub ↗
+                  </a>
+                ) : null}
+                {m.linkedin && !m.linkedin.includes("PLACEHOLDER") ? (
+                  <a href={m.linkedin} target="_blank" rel="noopener" className="text-[color:var(--muted)] transition-colors hover:text-[color:var(--paper)]">
+                    LinkedIn ↗
+                  </a>
+                ) : (
+                  <span className="text-[color:var(--muted)] opacity-60">LinkedIn — soon</span>
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
