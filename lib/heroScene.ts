@@ -226,7 +226,7 @@ varying vec2 vUv;
 void main() {
   vec3 top = vec3(0.059, 0.051, 0.102);   // #0F0D1A
   vec3 mid = vec3(0.10, 0.075, 0.20);
-  vec3 horizon = vec3(0.23, 0.13, 0.42);  // violet glow line
+  vec3 horizon = vec3(0.16, 0.10, 0.30);  // matches water sheen for a seamless waterline
   float h = smoothstep(0.0, 1.0, vUv.y);
   vec3 col = mix(horizon, top, pow(h, 0.72));
   col = mix(mid, col, smoothstep(0.12, 0.55, h));
@@ -338,6 +338,27 @@ export function createHeroScene(
   reflection.renderOrder = 0;
   scene.add(reflection);
 
+  // horizon glow band (additive) — hides the sky/water seam, Emotion-style glow
+  const glowMat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    vertexShader: SKY_VERT,
+    fragmentShader: /* glsl */ `
+      varying vec2 vUv;
+      void main() {
+        float x = smoothstep(0.0, 0.5, vUv.x) * smoothstep(1.0, 0.5, vUv.x);
+        float y = smoothstep(0.0, 0.85, vUv.y) * smoothstep(1.0, 0.15, vUv.y);
+        vec3 col = vec3(0.42, 0.26, 0.78) * x * y * 0.5;
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `,
+  });
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(30, 2.2), glowMat);
+  glow.position.set(0, -1.55, -1.5);
+  glow.renderOrder = -1;
+  scene.add(glow);
+
   // water plane
   const waterMat = new THREE.ShaderMaterial({
     transparent: true,
@@ -396,10 +417,14 @@ export function createHeroScene(
   let raf = 0;
   let morphUnitsDirty = false;
   let segPrev = 0;
-  const clock = new THREE.Clock();
+  let elapsed = 0;
+  let last = performance.now();
 
   const tick = () => {
-    const t = clock.getElapsedTime();
+    const now = performance.now();
+    elapsed += (now - last) / 1000;
+    last = now;
+    const t = elapsed;
     uniforms.uTime.value = t;
     // smooth morph toward target (scene-locked units win when set)
     const targetMorph = morphUnitsDirty ? morphTargetUnits : progress * (SHAPE_COUNT - 1);
@@ -453,6 +478,7 @@ export function createHeroScene(
     // single static frame
     uniforms.uTime.value = 4.2;
     renderer.render(scene, camera);
+    void elapsed;
   } else {
     raf = requestAnimationFrame(tick);
   }
