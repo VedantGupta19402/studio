@@ -939,10 +939,10 @@ export function createHeroScene(
       eSpawnPos[k * 3 + 1] = sy;
       eSpawnPos[k * 3 + 2] = sz;
       const len = Math.max(0.001, Math.hypot(sx, sy, sz));
-      const sp = 0.5 + Math.random() * 1.3;
-      eVel[k * 3] = (sx / len) * sp + (Math.random() - 0.5) * 0.3;
-      eVel[k * 3 + 1] = (sy / len) * sp + (Math.random() - 0.5) * 0.3 + 0.25;
-      eVel[k * 3 + 2] = (sz / len) * sp + (Math.random() - 0.5) * 0.3;
+      const sp = 0.9 + Math.random() * 2.6;
+      eVel[k * 3] = (sx / len) * sp + (Math.random() - 0.5) * 0.35;
+      eVel[k * 3 + 1] = (sy / len) * sp + (Math.random() - 0.5) * 0.35 + 0.3;
+      eVel[k * 3 + 2] = (sz / len) * sp + (Math.random() - 0.5) * 0.35;
       eLife[k] = 2.3 * (0.6 + Math.random() * 0.8);
     }
     (emberGeo.attributes.aSpawnPos as THREE.BufferAttribute).needsUpdate = true;
@@ -1007,7 +1007,7 @@ export function createHeroScene(
     simUniforms.burstIntensity.value = effBurst;
     renderUniforms.burstIntensity.value = effBurst;
     renderUniforms.centerGlowPulse.value = 1 + pulseIntensity * PULSE_AMPLITUDE_GLOW;
-    renderUniforms.centerGlowBoost.value = pulseIntensity;
+    renderUniforms.centerGlowBoost.value = pulseIntensity * 1.4;
     void waterWave0;
 
     mouseVel.multiplyScalar(0.86);
@@ -1078,8 +1078,8 @@ export function createHeroScene(
     const rotF = rotT - rotSeg;
     const ry =
       SHAPE_ROTATIONS[rotSeg] + (SHAPE_ROTATIONS[rotSeg + 1] - SHAPE_ROTATIONS[rotSeg]) * rotF;
-    points.rotation.y = ry;
-    reflection.rotation.y = ry;
+    points.rotation.y = ry + elapsed * 0.045;
+    reflection.rotation.y = ry + elapsed * 0.045;
 
     // dust drift
     const dp = dustGeo.attributes.position as THREE.BufferAttribute;
