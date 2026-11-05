@@ -1065,10 +1065,11 @@ export function createHeroScene(
     const FLY_START = 0.86;
     if (p > FLY_START) {
       const flyT = easeSmooth(Math.min(1, (p - FLY_START) / (1 - FLY_START)));
+      // converge onto the hole axis (torus faces +Z) and pass through along Z
       const approach = new THREE.Vector3(
-        points.position.x + radius * Math.sin(angle) * (1 - flyT),
-        oy + (points.position.y - oy) * 0.65 * flyT,
-        radius * Math.cos(angle) * (1 - flyT) - flyT * (radius * Math.cos(angle) * 0.12 + 3.2),
+        points.position.x,
+        points.position.y,
+        radius * Math.cos(angle) * (1 - flyT) - flyT * 5.5,
       );
       camera.position.lerp(approach, flyT);
     }
