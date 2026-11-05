@@ -92,7 +92,9 @@ export default function HeroWorld() {
   const sceneRef = useRef<HeroSceneHandle | null>(null);
   const [active, setActive] = useState(0);
   const activeRef = useRef(0);
+  const finaleFiredRef = useRef(false);
   const [bursting, setBursting] = useState(false);
+  const [finaleFade, setFinaleFade] = useState(false);
   useEffect(() => {
     // flash overlay tracks scene changes (covers the morph crossing)
     if (activeRef.current === 0) return;
@@ -100,6 +102,19 @@ export default function HeroWorld() {
     const t = setTimeout(() => setBursting(false), 480);
     return () => clearTimeout(t);
   }, [active]);
+  useEffect(() => {
+    // statement + CTAs fade during the finale dive (0.92 -> sticky end)
+    const onScroll = () => {
+      const el = document.getElementById("hero");
+      if (!el) return;
+      const range = el.offsetHeight - window.innerHeight;
+      const p = range > 0 ? window.scrollY / range : 0;
+      setFinaleFade(p > 0.92);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   useEffect(() => {
     // deterministic start: never restore a mid-journey scroll position
@@ -152,6 +167,16 @@ export default function HeroWorld() {
             if (idx !== activeRef.current) {
               activeRef.current = idx;
               setActive(idx);
+            }
+            // finale flash: whites out the screen as the camera passes the ring
+            // (reference covers the world->content handoff with the flash)
+            const FINALE_FLASH = 0.955;
+            if (self.progress > FINALE_FLASH && !finaleFiredRef.current) {
+              finaleFiredRef.current = true;
+              setBursting(true);
+              setTimeout(() => setBursting(false), 850);
+            } else if (self.progress < 0.9) {
+              finaleFiredRef.current = false;
             }
           },
         });
@@ -210,8 +235,11 @@ export default function HeroWorld() {
           </p>
         </div>
 
-        {/* statement stack */}
-        <div className="absolute bottom-[9vh] left-6 z-10 max-w-[86vw] md:left-12 md:max-w-[62vw]">
+        {/* statement stack — fades during the finale dive */}
+        <div
+          className="absolute bottom-[9vh] left-6 z-10 max-w-[86vw] transition-opacity duration-500 md:left-12 md:max-w-[62vw]"
+          style={{ opacity: finaleFade ? 0 : 1 }}
+        >
           {HERO_SCENES.map((s, i) => {
             const isActive = i === active;
             return (
@@ -253,8 +281,11 @@ export default function HeroWorld() {
           })}
         </div>
 
-        {/* CTAs */}
-        <div className="absolute bottom-[4vh] left-6 right-6 z-10 flex flex-col gap-3 sm:left-12 sm:right-auto sm:flex-row md:left-12">
+        {/* CTAs — fade during the finale dive */}
+        <div
+          className="absolute bottom-[4vh] left-6 right-6 z-10 flex flex-col gap-3 transition-opacity duration-500 sm:left-12 sm:right-auto sm:flex-row md:left-12"
+          style={{ opacity: finaleFade ? 0 : 1 }}
+        >
           {HERO_CTA.map((c) => (
             <a
               key={c.href + c.label}

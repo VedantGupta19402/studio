@@ -1063,8 +1063,9 @@ export function createHeroScene(
     // torus hole and passes through it (ring walls sweep the frame edges), then
     // the white flash hands off to the content sections
     const FLY_START = 0.86;
+    let flyT = 0;
     if (p > FLY_START) {
-      const flyT = easeSmooth(Math.min(1, (p - FLY_START) / (1 - FLY_START)));
+      flyT = easeSmooth(Math.min(1, (p - FLY_START) / (1 - FLY_START)));
       // converge onto the hole axis (torus faces +Z) and pass through along Z
       const approach = new THREE.Vector3(
         points.position.x,
@@ -1073,17 +1074,19 @@ export function createHeroScene(
       );
       camera.position.lerp(approach, flyT);
     }
-    // lookAt: particles anchor + per-scene offsets (smoothstepped between stops)
+    // lookAt: particles anchor + per-scene offsets (smoothstepped between stops);
+    // during the fly-through the view turns forward through the hole (never looks back)
     const stops = LOOKAT_OFFSETS;
     const t = easeSmooth(p) * (stops.length - 1);
     const seg = Math.min(Math.floor(t), stops.length - 2);
     const f = t - seg;
     const a = stops[seg];
     const b = stops[seg + 1];
+    const lz = points.position.z + a[2] + (b[2] - a[2]) * f - flyT * 26;
     camera.lookAt(
-      points.position.x + a[0] + (b[0] - a[0]) * f,
-      points.position.y + a[1] + (b[1] - a[1]) * f,
-      points.position.z + a[2] + (b[2] - a[2]) * f,
+      points.position.x,
+      points.position.y,
+      lz,
     );
     // per-shape group rotation (heart turned -75deg, reference grammar)
     const rotT = easeSmooth(p) * (SHAPE_ROTATIONS.length - 1);
