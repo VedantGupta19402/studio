@@ -927,7 +927,7 @@ export function createHeroScene(
   const spawnHeartbeat = () => {
     // reference spawnBatch: batch embers from random shape-surface points,
     // radial velocity + jitter, lifetime 2.3 * (0.6..1.4)
-    const BATCH = Math.floor(EMBER_N * 0.4);
+    const BATCH = Math.floor(EMBER_N * 0.22);
     const src = SHAPES[sceneIdx];
     for (let k = 0; k < BATCH; k++) {
       const idx2 = Math.floor(Math.random() * COUNT);
@@ -939,7 +939,7 @@ export function createHeroScene(
       eSpawnPos[k * 3 + 1] = sy;
       eSpawnPos[k * 3 + 2] = sz;
       const len = Math.max(0.001, Math.hypot(sx, sy, sz));
-      const sp = 0.9 + Math.random() * 2.6;
+      const sp = 0.7 + Math.random() * 1.5;
       eVel[k * 3] = (sx / len) * sp + (Math.random() - 0.5) * 0.35;
       eVel[k * 3 + 1] = (sy / len) * sp + (Math.random() - 0.5) * 0.35 + 0.3;
       eVel[k * 3 + 2] = (sz / len) * sp + (Math.random() - 0.5) * 0.35;
@@ -1002,11 +1002,11 @@ export function createHeroScene(
     prevHeartbeatFired = inWindow;
     pulseIntensity *= Math.pow(PULSE_DECAY, delta);
     if (burst > 0) burst = Math.max(0, burst - delta * 2.4);
-    const effBurst = Math.max(burst, pulseIntensity);
+    const effBurst = Math.max(burst, pulseIntensity * 0.55);
     simUniforms.burstIntensity.value = effBurst;
     renderUniforms.burstIntensity.value = effBurst;
     renderUniforms.centerGlowPulse.value = 1 + pulseIntensity * PULSE_AMPLITUDE_GLOW;
-    renderUniforms.centerGlowBoost.value = pulseIntensity * 1.4;
+    renderUniforms.centerGlowBoost.value = pulseIntensity * 0.8;
     void waterWave0;
 
     mouseVel.multiplyScalar(0.86);
@@ -1059,6 +1059,19 @@ export function createHeroScene(
       oy,
       radius * Math.cos(angle),
     );
+    // finale fly-through: in the last scene the camera dives from orbit into the
+    // torus hole and passes through it (ring walls sweep the frame edges), then
+    // the white flash hands off to the content sections
+    const FLY_START = 0.86;
+    if (p > FLY_START) {
+      const flyT = easeSmooth(Math.min(1, (p - FLY_START) / (1 - FLY_START)));
+      const approach = new THREE.Vector3(
+        points.position.x + radius * Math.sin(angle) * (1 - flyT),
+        oy + (points.position.y - oy) * 0.65 * flyT,
+        radius * Math.cos(angle) * (1 - flyT) - flyT * (radius * Math.cos(angle) * 0.12 + 3.2),
+      );
+      camera.position.lerp(approach, flyT);
+    }
     // lookAt: particles anchor + per-scene offsets (smoothstepped between stops)
     const stops = LOOKAT_OFFSETS;
     const t = easeSmooth(p) * (stops.length - 1);
@@ -1077,7 +1090,7 @@ export function createHeroScene(
     const rotF = rotT - rotSeg;
     const ry =
       SHAPE_ROTATIONS[rotSeg] + (SHAPE_ROTATIONS[rotSeg + 1] - SHAPE_ROTATIONS[rotSeg]) * rotF;
-    points.rotation.y = ry + elapsed * 0.045;
+    points.rotation.y = ry + elapsed * 0.016;
     reflection.rotation.y = ry + elapsed * 0.045;
 
     // dust drift
