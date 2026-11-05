@@ -171,8 +171,8 @@ function sampleTorus(n: number, rand: () => number): Float32Array {
 /** Ø mark — procedural ring + slash (deterministic, no canvas/fonts) */
 function sampleGlyph(n: number, rand: () => number): Float32Array {
   const out = new Float32Array(n * 3);
-  const R = 0.34;
-  const band = 0.075;
+  const R = 0.5;
+  const band = 0.1;
   const slashTilt = (68 * Math.PI) / 180;
   for (let i = 0; i < n; i++) {
     if (rand() < 0.32) {
