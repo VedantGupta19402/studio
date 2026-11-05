@@ -42,6 +42,13 @@ const SHAPE_BREAKPOINTS = [0.18, 0.4, 0.65, 0.87];
 const SHAPE_ROTATIONS = [0, 0, 0, -(75 * Math.PI) / 180, 0]; // heart turned, reference grammar
 const easeSmooth = (x: number) => x * x * (3 - 2 * x);
 
+/* energy heartbeat (reference: BURST_SPEED 0.5, fire window 0.8-0.9, SPAWN_BATCH 1600,
+   LIFETIME 2.3, pulse decay x0.05/s, centerGlowPulse = 1 + pulse * 0.3) */
+const BURST_SPEED = 0.5;
+const HEARTBEAT_WINDOW: [number, number] = [0.8, 0.9];
+const PULSE_AMPLITUDE_GLOW = 0.3;
+const PULSE_DECAY = 0.05;
+
 function sceneIndexForProgress(p: number): number {
   for (let i = SHAPE_BREAKPOINTS.length - 1; i >= 0; i--) {
     if (p > SHAPE_BREAKPOINTS[i]) return i + 1;
@@ -363,6 +370,7 @@ uniform float size;
 uniform float pixelRatio;
 uniform float centerGlowSize;
 uniform float centerGlowPulse;
+uniform float centerGlowBoost;
 uniform float burstIntensity;
 uniform float uTime;
 uniform vec3 GLOW_COLOR_U;
@@ -391,8 +399,9 @@ void main() {
   float centerGlow = 1.0 - smoothstep(0.0, glowRadius, distToCenter);
   centerGlow *= centerGlow;
   float speedMix = smoothstep(0.05, 0.5, speed) * 0.5;
+  float cgOpacity = CENTER_GLOW_OPACITY_U * (1.0 + centerGlowBoost * 2.2);
   vAddColor = GLOW_COLOR_U * glow * 1.5
-    + CENTER_GLOW_COLOR_U * centerGlow * CENTER_GLOW_OPACITY_U
+    + mix(CENTER_GLOW_COLOR_U, vec3(1.0), centerGlowBoost * 0.55) * centerGlow * cgOpacity
     + ENERGY_COLOR_U * speedMix;
   vBoostColor = TINT_COLOR_U * (1.3 * (1.0 + glow * 0.4 + centerGlow * 0.3 + burstIntensity));
   float blowoutKey = clamp(
@@ -605,6 +614,40 @@ export function createHeroScene(
   water.renderOrder = -1;
   scene.add(water);
 
+  // floor ripple (reference floorRipple): expanding violet wave rings on the water
+  const waterUniforms = { waveTimes: { value: [-10, -10, -10, -10] } };
+  const rippleMat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    vertexShader: SKY_VERT,
+    fragmentShader: `varying vec2 vUv;
+      uniform float waveTimes[4];
+      void main(){
+        vec2 c = vUv - 0.5;
+        c.x *= 3.3;
+        float d = length(c);
+        vec3 col = vec3(0.0);
+        float a = 0.0;
+        for (int i = 0; i < 4; i++) {
+          float t = (0.0 - waveTimes[i]) / 1.2;
+          if (t > 0.0 && t < 1.0) {
+            float r = t * 0.45;
+            float band = smoothstep(0.06, 0.0, abs(d - r)) * (1.0 - t) * (1.0 - t);
+            col += mix(vec3(0.42, 0.26, 0.78), vec3(0.95), t * 0.4) * band * 0.55;
+            a += band;
+          }
+        }
+        gl_FragColor = vec4(col, clamp(a, 0.0, 1.0));
+      }`,
+    uniforms: waterUniforms,
+  });
+  const ripple = new THREE.Mesh(new THREE.PlaneGeometry(200, 60), rippleMat);
+  ripple.rotation.x = -Math.PI / 2;
+  ripple.position.set(0, WATER_LEVEL + 0.05, 0);
+  ripple.renderOrder = 0;
+  scene.add(ripple);
+
   const glow = new THREE.Mesh(
     new THREE.PlaneGeometry(110, 8),
     new THREE.ShaderMaterial({
@@ -763,6 +806,7 @@ export function createHeroScene(
     pixelRatio: { value: dpr },
     centerGlowSize: { value: 7 },
     centerGlowPulse: { value: 1 },
+    centerGlowBoost: { value: 0 },
     GLOW_COLOR_U: { value: GLOW_COLOR },
     CENTER_GLOW_COLOR_U: { value: CENTER_GLOW_COLOR },
     CENTER_GLOW_OPACITY_U: { value: 0.35 },
@@ -865,6 +909,10 @@ export function createHeroScene(
   /* state + loop */
   let sceneIdx = 0;
   let burst = 0;
+  let pulseIntensity = 0;
+  let prevHeartbeatFired = false;
+  let suppressUntil = 0;
+  let springScale = 1;
   let elapsed = 0;
   let last = performance.now();
   let raf = 0;
@@ -874,6 +922,38 @@ export function createHeroScene(
   let pointerTimer: ReturnType<typeof setTimeout> | undefined;
   const interactRef = { value: 0 };
   const progressRef = { value: 0 };
+
+  let waterWave0 = -10;
+  const spawnHeartbeat = () => {
+    // reference spawnBatch: batch embers from random shape-surface points,
+    // radial velocity + jitter, lifetime 2.3 * (0.6..1.4)
+    const BATCH = Math.floor(EMBER_N * 0.55);
+    const src = SHAPES[sceneIdx];
+    for (let k = 0; k < BATCH; k++) {
+      const idx2 = Math.floor(Math.random() * COUNT);
+      eSpawn[k] = elapsed;
+      const sx = src[idx2 * 3];
+      const sy = src[idx2 * 3 + 1];
+      const sz = src[idx2 * 3 + 2];
+      eSpawnPos[k * 3] = sx;
+      eSpawnPos[k * 3 + 1] = sy;
+      eSpawnPos[k * 3 + 2] = sz;
+      const len = Math.max(0.001, Math.hypot(sx, sy, sz));
+      const sp = 0.5 + Math.random() * 1.3;
+      eVel[k * 3] = (sx / len) * sp + (Math.random() - 0.5) * 0.3;
+      eVel[k * 3 + 1] = (sy / len) * sp + (Math.random() - 0.5) * 0.3 + 0.25;
+      eVel[k * 3 + 2] = (sz / len) * sp + (Math.random() - 0.5) * 0.3;
+      eLife[k] = 2.3 * (0.6 + Math.random() * 0.8);
+    }
+    (emberGeo.attributes.aSpawnPos as THREE.BufferAttribute).needsUpdate = true;
+    (emberGeo.attributes.aVelocity as THREE.BufferAttribute).needsUpdate = true;
+    (emberGeo.attributes.aSpawnTime as THREE.BufferAttribute).needsUpdate = true;
+    (emberGeo.attributes.aLifetime as THREE.BufferAttribute).needsUpdate = true;
+    // floor ripple: 4-slot wave ring buffer (reference triggerWave)
+    waterUniforms.waveTimes.value[waterWaveIdx % 4] = -elapsed;
+    waterWaveIdx++;
+  };
+  let waterWaveIdx = 0;
 
   const spawnEmbers = () => {
     for (let k = 0; k < EMBER_N; k++) {
@@ -907,9 +987,28 @@ export function createHeroScene(
     last = now;
     elapsed += delta;
 
+    // softenRetarget recovery
+    springScale += (1 - springScale) * Math.min(1, delta * 2.2);
+    simUniforms.springStiffness.value = SPRING_STIFFNESS * springScale;
+
+    // energy heartbeat: every 2s a burst fires in the 0.8-0.9 phase window
+    const hbPhase = (elapsed * BURST_SPEED) % 1;
+    const inWindow = hbPhase > HEARTBEAT_WINDOW[0] && hbPhase < HEARTBEAT_WINDOW[1];
+    const suppressed = elapsed < suppressUntil;
+    if (inWindow && !prevHeartbeatFired && !suppressed) {
+      spawnHeartbeat();
+      pulseIntensity = 1;
+      burst = Math.max(burst, 0.65);
+    }
+    prevHeartbeatFired = inWindow;
+    pulseIntensity *= Math.pow(PULSE_DECAY, delta);
     if (burst > 0) burst = Math.max(0, burst - delta * 2.4);
-    simUniforms.burstIntensity.value = burst;
-    renderUniforms.burstIntensity.value = burst;
+    const effBurst = Math.max(burst, pulseIntensity * 0.8);
+    simUniforms.burstIntensity.value = effBurst;
+    renderUniforms.burstIntensity.value = effBurst;
+    renderUniforms.centerGlowPulse.value = 1 + pulseIntensity * PULSE_AMPLITUDE_GLOW;
+    renderUniforms.centerGlowBoost.value = pulseIntensity;
+    void waterWave0;
 
     mouseVel.multiplyScalar(0.86);
     simUniforms.uMouseVel.value.copy(mouseVel);
@@ -1011,8 +1110,10 @@ export function createHeroScene(
       if (idx !== sceneIdx) {
         sceneIdx = idx;
         burst = 1;
+        suppressUntil = elapsed + 1.1; // energyFiringSuppressed during transition
         simUniforms.textureTarget.value = targetTextures[idx];
         spawnEmbers();
+        springScale = 0.2; // softenRetarget: spring drops to 20%, tweens back
       }
     },
     setProgress(p) {
