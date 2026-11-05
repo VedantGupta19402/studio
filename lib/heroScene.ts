@@ -39,7 +39,7 @@ const LOOKAT_OFFSETS: [number, number, number][] = [
   [0, -1.1, 0], [0, 2.5, 2.5], [0, 0.6, 2], [0, 1.6, 1.6], [0, 0, 0],
 ];
 const SHAPE_BREAKPOINTS = [0.18, 0.4, 0.65, 0.87];
-const SHAPE_ROTATIONS = [0, 0, 0, 0, 0]; // parametric heart faces +Z natively
+const SHAPE_ROTATIONS = [0, 0, 0, -(77 * Math.PI) / 180, 0]; // heart faces camera at its orbit azimuth
 const easeSmooth = (x: number) => x * x * (3 - 2 * x);
 
 /* energy heartbeat (reference: BURST_SPEED 0.5, fire window 0.8-0.9, SPAWN_BATCH 1600,
@@ -1107,14 +1107,21 @@ export function createHeroScene(
       points.position.y,
       lz,
     );
-    // per-shape group rotation (heart turned -75deg, reference grammar)
+    // per-shape group rotation (heart faces the camera at its orbit azimuth)
     const rotT = easeSmooth(p) * (SHAPE_ROTATIONS.length - 1);
     const rotSeg = Math.min(Math.floor(rotT), SHAPE_ROTATIONS.length - 2);
     const rotF = rotT - rotSeg;
-    const ry =
+    let ry =
       SHAPE_ROTATIONS[rotSeg] + (SHAPE_ROTATIONS[rotSeg + 1] - SHAPE_ROTATIONS[rotSeg]) * rotF;
+    // last scene: rotate the ring to face the camera (azimuth compensation), easing
+    // to 0 as the orbit comes full circle — donut reads perfectly frontal in the dive
+    if (p > 0.87) {
+      const blend = Math.min(1, (p - 0.87) / 0.05);
+      const frontal = -(Math.PI * 2 - angle);
+      ry = ry * (1 - blend) + frontal * blend;
+    }
     points.rotation.y = ry + elapsed * 0.016;
-    reflection.rotation.y = ry + elapsed * 0.045;
+    reflection.rotation.y = points.rotation.y;
 
     // dust drift
     const dp = dustGeo.attributes.position as THREE.BufferAttribute;
