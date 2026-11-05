@@ -48,6 +48,44 @@ function OrbCursor() {
   );
 }
 
+/** per-character noise-decode reveal (reference decodeProgress grammar):
+ *  characters start as scramble glyphs and resolve left-to-right over ~750ms */
+const GLYPHS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ#$%&/=?*+<>@0123456789";
+function ScrambleText({ text, active }: { text: string; active: boolean }) {
+  const [out, setOut] = useState(() => text);
+  const rafRef = useRef(0);
+  useEffect(() => {
+    if (!active) {
+      setOut(text);
+      return;
+    }
+    const start = performance.now();
+    const DURATION = 750;
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / DURATION);
+      const resolved = Math.floor(t * text.length);
+      let acc = "";
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (c === "\n" || c === " ") {
+          acc += c;
+          continue;
+        }
+        acc +=
+          i < resolved
+            ? c
+            : GLYPHS[Math.floor(Math.random() * GLYPHS.length)];
+      }
+      setOut(acc);
+      if (t < 1) rafRef.current = requestAnimationFrame(tick);
+      else setOut(text);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [active, text]);
+  return <span className="statement-solid">{out}</span>;
+}
+
 export default function HeroWorld() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -199,9 +237,9 @@ export default function HeroWorld() {
                     isActive ? "statement-live" : ""
                   }`}
                 >
-                  {/* solid + wireframe layers for the glitch swap */}
+                  {/* solid + wireframe layers for the glitch swap; decode on activation */}
                   <span className="relative inline-block">
-                    <span className="statement-solid">{s.caps}</span>
+                    <ScrambleText text={s.caps} active={isActive} />
                     <span
                       aria-hidden="true"
                       className="statement-wire pointer-events-none absolute inset-0"
