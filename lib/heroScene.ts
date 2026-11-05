@@ -1035,10 +1035,20 @@ export function createHeroScene(
     simUniforms.uInteractForce.value = interactRef.value;
 
     camera.updateMatrixWorld();
-    simUniforms.uMVP.value.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    points.updateMatrixWorld();
+    // reference multiplies the model matrix — the mask must project RENDER-space
+    // positions (scale 8.2 + translate), not raw unit-space sim positions
+    simUniforms.uMVP.value
+      .multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+      .multiply(points.matrixWorld);
     const m = camera.matrixWorld.elements;
-    (simUniforms.uCamRight.value as THREE.Vector3).set(m[0], m[1], m[2]);
-    (simUniforms.uCamUp.value as THREE.Vector3).set(m[4], m[5], m[6]);
+    const modelInv = new THREE.Matrix4().copy(points.matrixWorld).invert();
+    (simUniforms.uCamRight.value as THREE.Vector3)
+      .set(m[0], m[1], m[2])
+      .transformDirection(modelInv);
+    (simUniforms.uCamUp.value as THREE.Vector3)
+      .set(m[4], m[5], m[6])
+      .transformDirection(modelInv);
     simUniforms.uAspect.value = camera.aspect;
     simUniforms.time.value = elapsed;
     simUniforms.delta.value = delta;
