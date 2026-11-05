@@ -927,7 +927,7 @@ export function createHeroScene(
   const spawnHeartbeat = () => {
     // reference spawnBatch: batch embers from random shape-surface points,
     // radial velocity + jitter, lifetime 2.3 * (0.6..1.4)
-    const BATCH = Math.floor(EMBER_N * 0.55);
+    const BATCH = Math.floor(EMBER_N * 0.4);
     const src = SHAPES[sceneIdx];
     for (let k = 0; k < BATCH; k++) {
       const idx2 = Math.floor(Math.random() * COUNT);
@@ -997,13 +997,12 @@ export function createHeroScene(
     const suppressed = elapsed < suppressUntil;
     if (inWindow && !prevHeartbeatFired && !suppressed) {
       spawnHeartbeat();
-      pulseIntensity = 1;
-      burst = Math.max(burst, 0.65);
+      pulseIntensity = 1; // sim kick ties ONLY to pulse (fast reference decay)
     }
     prevHeartbeatFired = inWindow;
     pulseIntensity *= Math.pow(PULSE_DECAY, delta);
     if (burst > 0) burst = Math.max(0, burst - delta * 2.4);
-    const effBurst = Math.max(burst, pulseIntensity * 0.8);
+    const effBurst = Math.max(burst, pulseIntensity);
     simUniforms.burstIntensity.value = effBurst;
     renderUniforms.burstIntensity.value = effBurst;
     renderUniforms.centerGlowPulse.value = 1 + pulseIntensity * PULSE_AMPLITUDE_GLOW;
