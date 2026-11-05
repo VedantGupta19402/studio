@@ -115,7 +115,7 @@ function sampleSphere(n: number, rand: () => number): Float32Array {
 function sampleHeart(n: number, rand: () => number): Float32Array {
   // reference "heart-tree": wide heart canopy (parametric curve band + light fill)
   // on a sparse trunk, facing +Z so it reads frontal during its scene
-  const S = 0.52;
+  const S = 0.78;
   const out = new Float32Array(n * 3);
   const heartPt = (t: number): [number, number] => {
     const x = 16 * Math.pow(Math.sin(t), 3) / 17;
@@ -127,12 +127,12 @@ function sampleHeart(n: number, rand: () => number): Float32Array {
     if (r < 0.16) {
       // trunk + branches
       const t = rand();
-      if (t < 0.72) {
-        out.set([(rand() - 0.5) * 0.05, -0.95 + t * 0.62, (rand() - 0.5) * 0.05], i * 3);
+      if (t < 0.78) {
+        out.set([(rand() - 0.5) * 0.06, -0.62 + t * 0.5, (rand() - 0.5) * 0.06], i * 3);
       } else {
         const side = rand() < 0.5 ? -1 : 1;
         const s2 = rand();
-        out.set([side * (0.08 + s2 * 0.3), -0.42 + s2 * 0.34, (rand() - 0.5) * 0.04], i * 3);
+        out.set([side * (0.1 + s2 * 0.34), -0.28 + s2 * 0.3, (rand() - 0.5) * 0.05], i * 3);
       }
       continue;
     }
@@ -141,12 +141,12 @@ function sampleHeart(n: number, rand: () => number): Float32Array {
     if (r < 0.68) {
       // canopy outline band (two-lobe bumps read clearly)
       const j = 0.96 + rand() * 0.08;
-      out.set([hx * S * j, hy * S * j + 0.32, (rand() - 0.5) * 0.16], i * 3);
+      out.set([hx * S * j, hy * S * j + 0.42, (rand() - 0.5) * 0.18], i * 3);
     } else {
       // light interior fill
       const f = Math.sqrt(rand());
       const [fx, fy] = heartPt(rand() * Math.PI * 2);
-      out.set([fx * S * f * 0.92, fy * S * f * 0.92 + 0.32, (rand() - 0.5) * 0.3], i * 3);
+      out.set([fx * S * f * 0.92, fy * S * f * 0.92 + 0.42, (rand() - 0.5) * 0.34], i * 3);
     }
   }
   return out;
@@ -823,7 +823,7 @@ export function createHeroScene(
     extrapolateTau: { value: 0.5 },
     size: { value: PARTICLE_SIZE },
     pixelRatio: { value: dpr },
-    centerGlowSize: { value: 7 },
+    centerGlowSize: { value: 0.7 },
     centerGlowPulse: { value: 1 },
     centerGlowBoost: { value: 0 },
     GLOW_COLOR_U: { value: GLOW_COLOR },
