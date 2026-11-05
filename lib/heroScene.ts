@@ -36,10 +36,10 @@ const ORBIT_INITIAL_ANGLE = Math.atan2(CAMERA_POSITION[0], CAMERA_POSITION[2]);
 const ORBIT_Y = CAMERA_POSITION[1];
 const ORBIT_CLOSE_FACTOR = 0.6;
 const LOOKAT_OFFSETS: [number, number, number][] = [
-  [0, 0, 0], [0, 2.5, 2.5], [0, 0, 0], [0, 2.5, 2.5], [0, 0, 0],
+  [0, -1.1, 0], [0, 2.5, 2.5], [0, 0.6, 2], [0, 1.6, 1.6], [0, 0, 0],
 ];
 const SHAPE_BREAKPOINTS = [0.18, 0.4, 0.65, 0.87];
-const SHAPE_ROTATIONS = [0, 0, 0, -(75 * Math.PI) / 180, 0]; // heart turned, reference grammar
+const SHAPE_ROTATIONS = [0, 0, 0, 0, 0]; // parametric heart faces +Z natively
 const easeSmooth = (x: number) => x * x * (3 - 2 * x);
 
 /* energy heartbeat (reference: BURST_SPEED 0.5, fire window 0.8-0.9, SPAWN_BATCH 1600,
@@ -113,23 +113,42 @@ function sampleSphere(n: number, rand: () => number): Float32Array {
 }
 
 function sampleHeart(n: number, rand: () => number): Float32Array {
-  const S = 0.46;
+  // reference "heart-tree": wide heart canopy (parametric curve band + light fill)
+  // on a sparse trunk, facing +Z so it reads frontal during its scene
+  const S = 0.52;
   const out = new Float32Array(n * 3);
-  let i = 0;
-  let guard = 0;
-  while (i < n && guard < n * 80) {
-    guard++;
-    const x = rand() * 2.6 - 1.3;
-    const y = rand() * 2.6 - 1.3;
-    const z = rand() * 2.6 - 1.3;
-    const q =
-      Math.pow(x * x + (9 / 4) * y * y + z * z - 1, 3) - x * x * z * z * z - (9 / 80) * y * y * z * z * z;
-    if (Math.abs(q) < 0.2) {
-      out.set([x * S, z * S * 0.92 + 0.3, y * S * 0.8], i * 3);
-      i++;
+  const heartPt = (t: number): [number, number] => {
+    const x = 16 * Math.pow(Math.sin(t), 3) / 17;
+    const y = (13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) / 17;
+    return [x, y];
+  };
+  for (let i = 0; i < n; i++) {
+    const r = rand();
+    if (r < 0.16) {
+      // trunk + branches
+      const t = rand();
+      if (t < 0.72) {
+        out.set([(rand() - 0.5) * 0.05, -0.95 + t * 0.62, (rand() - 0.5) * 0.05], i * 3);
+      } else {
+        const side = rand() < 0.5 ? -1 : 1;
+        const s2 = rand();
+        out.set([side * (0.08 + s2 * 0.3), -0.42 + s2 * 0.34, (rand() - 0.5) * 0.04], i * 3);
+      }
+      continue;
+    }
+    const t = rand() * Math.PI * 2;
+    const [hx, hy] = heartPt(t);
+    if (r < 0.68) {
+      // canopy outline band (two-lobe bumps read clearly)
+      const j = 0.96 + rand() * 0.08;
+      out.set([hx * S * j, hy * S * j + 0.32, (rand() - 0.5) * 0.16], i * 3);
+    } else {
+      // light interior fill
+      const f = Math.sqrt(rand());
+      const [fx, fy] = heartPt(rand() * Math.PI * 2);
+      out.set([fx * S * f * 0.92, fy * S * f * 0.92 + 0.32, (rand() - 0.5) * 0.3], i * 3);
     }
   }
-  for (; i < n; i++) out.set([0, 0, 0], i * 3);
   return out;
 }
 
@@ -399,7 +418,7 @@ void main() {
   float centerGlow = 1.0 - smoothstep(0.0, glowRadius, distToCenter);
   centerGlow *= centerGlow;
   float speedMix = smoothstep(0.05, 0.5, speed) * 0.5;
-  float cgOpacity = CENTER_GLOW_OPACITY_U * (1.0 + centerGlowBoost * 2.2);
+  float cgOpacity = CENTER_GLOW_OPACITY_U * (1.0 + centerGlowBoost * 1.2);
   vAddColor = GLOW_COLOR_U * glow * 1.5
     + mix(CENTER_GLOW_COLOR_U, vec3(1.0), centerGlowBoost * 0.55) * centerGlow * cgOpacity
     + ENERGY_COLOR_U * speedMix;
@@ -809,7 +828,7 @@ export function createHeroScene(
     centerGlowBoost: { value: 0 },
     GLOW_COLOR_U: { value: GLOW_COLOR },
     CENTER_GLOW_COLOR_U: { value: CENTER_GLOW_COLOR },
-    CENTER_GLOW_OPACITY_U: { value: 0.35 },
+    CENTER_GLOW_OPACITY_U: { value: 0.2 },
     TINT_COLOR_U: { value: TINT_COLOR },
     ENERGY_COLOR_U: { value: ENERGY_COLOR },
     burstIntensity: { value: 0 },
