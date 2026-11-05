@@ -426,7 +426,7 @@ void main() {
   float blowoutKey = clamp(
     glow * 0.7 + burstIntensity * 0.5 + scatter * 0.45 + smoothstep(0.08, 0.45, speed) * 0.45, 0.0, 1.0);
   vFx = vec3(1.0 + 0.05 * sin(uTime * 1.5 + aHash * 6.28318), scatter * 0.2,
-    smoothstep(0.25, 0.95, blowoutKey) * 0.25);
+    smoothstep(0.15, 0.62, blowoutKey) * 0.55);
   vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
   gl_Position = projectionMatrix * mvPosition;
   float sizeAttenuation = 350.0 / -mvPosition.z;
