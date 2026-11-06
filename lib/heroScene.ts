@@ -734,7 +734,7 @@ export function createHeroScene(
     uMouseUV: { value: new THREE.Vector2(0.5, 0.5) },
     uMouseVel: { value: new THREE.Vector2(0, 0) },
     uAspect: { value: 1 },
-    uImpulseScale: { value: 1 },
+    uImpulseScale: { value: 0.13 }, // unit-space sim: their 1.0 in +-5..11 world ~= 0.13 here
     uMVP: { value: new THREE.Matrix4() },
     uCamRight: { value: new THREE.Vector3(1, 0, 0) },
     uCamUp: { value: new THREE.Vector3(0, 1, 0) },
