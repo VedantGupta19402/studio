@@ -1293,7 +1293,9 @@ export function createHeroScene(
       const frontal = -(Math.PI * 2 - angle);
       ry = ry * (1 - blend) + frontal * blend;
     }
-    points.rotation.y = ry + elapsed * 0.016;
+    // scroll-driven only — a time-based drift leaves the shape at a different
+    // axis when the visitor scrolls back up to the same scene
+    points.rotation.y = ry;
     groundUniforms.uCam.value.set(camera.position.x, camera.position.z);
     groundUniforms.uMark.value.set(points.position.x, points.position.z);
 
