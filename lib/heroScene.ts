@@ -25,13 +25,15 @@ const REPULSION_RADIUS = 0.0008;
 const SCATTER_DURATION = 0.35;
 const RETURN_SHARPNESS = 4;
 const PULSE_AMPLITUDE = 0.3;
-const PARTICLE_SIZE = 0.48;
+const PARTICLE_SIZE = 0.44;
 const SHAPE_SCALE = 5;
 /* environment: a closed deep-space shell around the whole journey.
-   the mark floats above a planet limb; the camera dips to -1.6, so the
-   planet surface sits well below it (no clipping at any orbit angle). */
-const MARK_Y = 7.62;
-const GROUND_Y = -8;
+   the mark floats just above eye level over a huge planet cap; the camera
+   dips to -1.6, staying ~20 units above the surface (no clipping anywhere). */
+const MARK_Y = 2.2;
+const GROUND_Y = -22;
+const PLANET_RADIUS = 2200;
+const PLANET_CENTER = new THREE.Vector3(0, GROUND_Y - PLANET_RADIUS, 0);
 
 /* orbit camera (reference algorithm verbatim; constants adapted to our world) */
 const CAMERA_POSITION: [number, number, number] = [5.44, 3.4, 34];
@@ -408,6 +410,10 @@ varying vec3 vColor;
 varying vec3 vAddColor;
 varying vec3 vBoostColor;
 varying vec3 vFx;
+varying vec3 vLight;
+varying float vHash;
+varying float vSeam;
+varying float vFacet;
 void main() {
   vec4 posData = texture2D(positionTexture, texCoord);
   vec4 velData = texture2D(velocityTexture, texCoord);
@@ -417,25 +423,43 @@ void main() {
   float scatter = velData.w;
   float speed = length(currVel);
   vColor = color;
+  vHash = aHash;
+  // cloud-level lighting: the point's radial direction acts as the form's
+  // normal, quantized into facets so the whole flock reads as one lit solid
+  vec3 nObj = normalize(pos + vec3(0.0001));
+  vec3 nS = normalize(normalMatrix * nObj);
+  vec3 nQ = normalize(normalMatrix * normalize(floor(nObj * 5.0) + 0.5));
+  vec3 keyDir = normalize((viewMatrix * vec4(0.55, 0.82, 0.38, 0.0)).xyz);
+  float NdL = dot(nQ, keyDir);
+  vLight = vec3(
+    smoothstep(-0.40, 0.78, NdL),
+    pow(max(NdL, 0.0), 20.0),
+    pow(1.0 - abs(nS.z), 2.6)
+  );
+  vec3 cellD = abs(fract(nObj * 5.0) - 0.5);
+  vSeam = 1.0 - smoothstep(0.04, 0.115, min(min(cellD.x, cellD.y), cellD.z));
+  vec3 cellId = floor(nObj * 5.0);
+  vFacet = 0.90 + 0.20 * fract(sin(dot(cellId, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
   float distToCenter = length(pos);
   float glowRadius = centerGlowSize * centerGlowPulse;
   float centerGlow = 1.0 - smoothstep(0.0, glowRadius, distToCenter);
   centerGlow *= centerGlow;
   float speedMix = smoothstep(0.05, 0.5, speed) * 0.5;
   float cgOpacity = CENTER_GLOW_OPACITY_U * (1.0 + centerGlowBoost * 1.2);
-  vAddColor = GLOW_COLOR_U * glow * 1.5
-    + mix(CENTER_GLOW_COLOR_U, vec3(1.0), centerGlowBoost * 0.55) * centerGlow * cgOpacity
-    + ENERGY_COLOR_U * speedMix;
+  vAddColor = GLOW_COLOR_U * glow * 0.45
+    + mix(CENTER_GLOW_COLOR_U, vec3(1.0), centerGlowBoost * 0.55) * centerGlow * cgOpacity * 0.55
+    + ENERGY_COLOR_U * speedMix * 0.55;
   vBoostColor = TINT_COLOR_U * (1.3 * (1.0 + glow * 0.4 + centerGlow * 0.3 + burstIntensity));
   float blowoutKey = clamp(
     glow * 0.7 + burstIntensity * 0.5 + scatter * 0.45 + smoothstep(0.08, 0.45, speed) * 0.45, 0.0, 1.0);
-  vFx = vec3(1.0 + 0.05 * sin(uTime * 1.5 + aHash * 6.28318), scatter * 0.2,
-    smoothstep(0.15, 0.62, blowoutKey) * 0.55);
+  vFx = vec3(1.0 + 0.05 * sin(uTime * 1.5 + aHash * 6.28318), scatter * 0.16,
+    smoothstep(0.42, 0.88, blowoutKey) * 0.32);
   vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
   gl_Position = projectionMatrix * mvPosition;
   float sizeAttenuation = 350.0 / -mvPosition.z;
   float bloomScale = 1.0 + glow * 0.35;
-  gl_PointSize = clamp(size * pixelRatio * sizeAttenuation * bloomScale, 2.0, 100.0) * 0.84;
+  gl_PointSize = clamp(
+    size * pixelRatio * sizeAttenuation * bloomScale * (0.80 + 0.40 * aHash), 2.0, 100.0) * 0.84;
 }`;
 
 const RENDER_FRAG = /* glsl */ `
@@ -444,6 +468,10 @@ varying vec3 vColor;
 varying vec3 vAddColor;
 varying vec3 vBoostColor;
 varying vec3 vFx;
+varying vec3 vLight;
+varying float vHash;
+varying float vSeam;
+varying float vFacet;
 uniform vec3 lightDirView;
 uniform vec3 halfDirView;
 uniform float uPresence;
@@ -467,14 +495,21 @@ void main() {
   float backLit = 1.0 - NdotL;
   baseColor += vColor * (backLit * backLit * 0.18);
   vec3 rimMix = mix(rimColorWarm, rimColorCool, rim2);
-  baseColor += rimMix * rimGlow;
+  baseColor += rimMix * rimGlow * 0.22;
   float sN = max(dot(normal, halfDirView), 0.0);
   float s2 = sN * sN;
   float s4 = s2 * s2;
   float s8 = s4 * s4;
   float s16 = s8 * s8;
-  float spec = s16 * s8 * 0.25;
+  float spec = s16 * s8 * 0.07;
   baseColor += specColor * spec;
+  // form-level lighting: key, facet seams, glossy band and silhouette rim
+  baseColor *= 0.16 + 1.55 * vLight.x;
+  baseColor *= vFacet;
+  baseColor *= 0.88 + 0.24 * vHash;
+  baseColor += vec3(0.58, 0.66, 1.0) * vLight.y * 0.30;
+  baseColor += vec3(0.60, 0.48, 1.0) * vLight.z * 0.20;
+  baseColor += vec3(0.60, 0.66, 0.98) * vSeam * 0.20 * (0.20 + 0.80 * vLight.x);
   baseColor += vAddColor;
   float luma = dot(baseColor, vec3(0.299, 0.587, 0.114));
   baseColor = mix(baseColor, vec3(luma), vFx.y);
@@ -565,7 +600,7 @@ export function createHeroScene(
   renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(50, canvas.clientWidth / canvas.clientHeight, 0.1, 4000);
+  const camera = new THREE.PerspectiveCamera(50, canvas.clientWidth / canvas.clientHeight, 0.1, 6000);
   camera.position.set(0.6, 3.4, 34);
   camera.lookAt(4.2, 6.8, 0);
 
@@ -578,18 +613,28 @@ export function createHeroScene(
      so every background layer must surround the stage. No flat backdrops. */
   const markX = () => (camera.aspect < 0.9 ? 0.8 : 4.2);
 
-  // sky dome: near-black violet gradient + faint nebula + horizon atmosphere
-  const domeUniforms = { uTime: { value: 0 } };
+  // sky dome: near-black violet gradient, soft nebulae, and an analytic
+  // atmosphere halo that hugs the planet limb from any camera angle
+  const domeUniforms = {
+    uTime: { value: 0 },
+    uPlanetCenter: { value: PLANET_CENTER.clone() },
+    uPlanetRadius: { value: PLANET_RADIUS },
+  };
   const domeMat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
     depthTest: false,
     uniforms: domeUniforms,
-    vertexShader: `varying vec3 vDir;
-      void main(){ vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+    vertexShader: `varying vec3 vWorld;
+      void main(){
+        vWorld = (modelMatrix * vec4(position, 1.0)).xyz;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
     fragmentShader: `precision highp float;
-      varying vec3 vDir;
+      varying vec3 vWorld;
       uniform float uTime;
+      uniform vec3 uPlanetCenter;
+      uniform float uPlanetRadius;
       float hash(vec3 p){ return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
       float vnoise(vec3 p){
         vec3 i = floor(p); vec3 f = fract(p); f = f*f*(3.0-2.0*f);
@@ -597,21 +642,36 @@ export function createHeroScene(
         float n001=hash(i+vec3(0.0,0.0,1.0)), n101=hash(i+vec3(1.0,0.0,1.0)), n011=hash(i+vec3(0.0,1.0,1.0)), n111=hash(i+vec3(1.0,1.0,1.0));
         return mix(mix(mix(n000,n100,f.x), mix(n010,n110,f.x), f.y), mix(mix(n001,n101,f.x), mix(n011,n111,f.x), f.y), f.z);
       }
-      float fbm(vec3 p){ float s=0.0, a=0.5; for(int i=0;i<3;i++){ s += a*vnoise(p); p*=2.03; a*=0.5; } return s; }
+      float fbm(vec3 p){ float s=0.0, a=0.5; for(int i=0;i<4;i++){ s += a*vnoise(p); p*=2.03; a*=0.5; } return s; }
       void main(){
-        vec3 d = normalize(vDir);
+        vec3 d = normalize(vWorld - cameraPosition);
         float h = d.y;
-        vec3 zenith  = vec3(0.013, 0.010, 0.033);
-        vec3 mid     = vec3(0.030, 0.021, 0.060);
-        vec3 horizon = vec3(0.068, 0.044, 0.140);
-        vec3 col = mix(horizon, zenith, smoothstep(0.0, 0.62, h));
-        col = mix(mid, col, smoothstep(0.04, 0.30, h));
-        float neb = smoothstep(0.45, 0.92, fbm(d * 2.6 + vec3(0.0, uTime * 0.004, 0.0)));
-        col += vec3(0.14, 0.07, 0.28) * neb * smoothstep(0.03, 0.42, h) * 0.45;
-        // thin atmosphere rim: a razor line at the limb plus a soft underglow
-        float band = exp(-abs(h) / 0.020);
-        col += mix(vec3(0.26, 0.16, 0.52), vec3(0.84, 0.78, 1.0), band) * band * 0.34;
-        col += vec3(0.085, 0.055, 0.17) * exp(-max(h, 0.0) / 0.22) * 0.38;
+        vec3 zenith  = vec3(0.008, 0.007, 0.021);
+        vec3 mid     = vec3(0.018, 0.013, 0.040);
+        vec3 horizon = vec3(0.040, 0.028, 0.086);
+        vec3 col = mix(horizon, zenith, smoothstep(0.0, 0.55, h));
+        col = mix(mid, col, smoothstep(0.02, 0.22, h));
+
+        // two wispy nebula layers: faint violet with a violet-blue edge
+        vec3 np = d * 2.3 + vec3(0.0, uTime * 0.003, 0.0);
+        float n1 = fbm(np);
+        float n2 = fbm(d * 5.1 + vec3(11.3, 4.7, -2.1));
+        float neb = smoothstep(0.42, 0.88, n1) * 0.85 + smoothstep(0.52, 0.92, n2) * 0.40;
+        neb *= smoothstep(0.0, 0.38, h) * (1.0 - smoothstep(0.75, 1.0, h));
+        col += mix(vec3(0.075, 0.045, 0.165), vec3(0.135, 0.090, 0.245), n2) * neb * 0.70;
+
+        // analytic planet halo: angular distance above the limb (exact for a
+        // sphere, independent of orbit position)
+        vec3 oc = cameraPosition - uPlanetCenter;
+        vec3 up = normalize(oc);
+        float hgt = length(oc) - uPlanetRadius;
+        float delta = acos(clamp(uPlanetRadius / (uPlanetRadius + hgt), -1.0, 1.0));
+        float elev = asin(clamp(dot(d, up), -1.0, 1.0));
+        float above = max(elev + delta, 0.0);
+        float halo = exp(-pow(above / 0.0065, 2.0));
+        float wide = exp(-above / 0.016);
+        col += mix(vec3(0.34, 0.25, 0.72), vec3(0.86, 0.89, 1.0), halo) * halo * 0.46;
+        col += vec3(0.16, 0.12, 0.30) * wide * 0.12;
         gl_FragColor = vec4(col, 1.0);
       }`,
   });
@@ -670,12 +730,12 @@ export function createHeroScene(
   stars.frustumCulled = false;
   scene.add(stars);
 
-  // planet surface: a flat ground disc that fades into the horizon band.
-  // A curved 1500-unit sphere read as a bright lavender wash at grazing angles
-  // and showed its own coarse tessellation near the pole, so the local floor is
-  // a single plane and the curvature lives only in the sky dome + terrain rings.
+  // planet cap: a 23° spherical cap of a 2200-unit sphere whose surface sits
+  // 22 units below the stage. The silhouette is the limb; normals are analytic
+  // (world position - center) so no tessellation bands appear near the pole.
   const waveTimes = new Float32Array(4).fill(-10);
   const groundUniforms = {
+    uCenter: { value: PLANET_CENTER.clone() },
     uCam: { value: new THREE.Vector2() },
     uMark: { value: new THREE.Vector2() },
     uTime: { value: 0 },
@@ -691,6 +751,7 @@ export function createHeroScene(
       }`,
     fragmentShader: `precision highp float;
       varying vec3 vWorld;
+      uniform vec3 uCenter;
       uniform vec2 uCam; uniform vec2 uMark; uniform float uTime; uniform float uPulse;
       uniform float uWaves[4];
       float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -699,100 +760,72 @@ export function createHeroScene(
         float a=hash(i), b=hash(i+vec2(1.0,0.0)), c=hash(i+vec2(0.0,1.0)), d=hash(i+vec2(1.0,1.0));
         return mix(mix(a,b,f.x), mix(c,d,f.x), f.y);
       }
+      float terrain(vec2 q){
+        return n2(q * 0.016) * 0.45 + n2(q * 0.062) * 0.33 + n2(q * 0.26) * 0.22;
+      }
       void main(){
+        vec3 Ng = normalize(vWorld - uCenter);      // analytic sphere normal
+        vec3 V  = normalize(cameraPosition - vWorld);
         vec2 q = vWorld.xz;
-        float rock = n2(q * 0.010) * 0.6 + n2(q * 0.045) * 0.4;
-        float grain = n2(q * 0.35) * 0.5 + n2(q * 1.10) * 0.5;
-        vec3 col = mix(vec3(0.010, 0.009, 0.021), vec3(0.033, 0.025, 0.060), rock);
-        col += vec3(0.013, 0.010, 0.026) * grain * 0.7;
-        // distance haze lifts the far rock into the sky's horizon tone; the ramp
-        // starts near the camera so the light doesn't collapse into a 2px strip
-        float dist = length(q - uCam);
-        float haze = smoothstep(70.0, 900.0, dist);
-        col = mix(col, vec3(0.062, 0.040, 0.124), haze * 0.9);
+        float e = 0.12;
+        float h0 = terrain(q);
+        float hx = terrain(q + vec2(e, 0.0));
+        float hz = terrain(q + vec2(0.0, e));
+        vec3 N = normalize(Ng + vec3((h0 - hx) * 6.0, 0.0, (h0 - hz) * 6.0));
+        vec3 L = normalize(vec3(-0.55, 0.50, 0.40));
+        float diff = max(dot(N, L), 0.0);
 
-        // mark light pool + heartbeat rings live in the surface itself, so there
-        // are no floating additive planes to expose their edges at grazing angles
+        // dark basalt with violet dust in the low ground (hamol tonal range)
+        vec3 rock = mix(vec3(0.016, 0.015, 0.028), vec3(0.105, 0.097, 0.128), smoothstep(0.18, 0.86, h0));
+        rock = mix(rock, vec3(0.150, 0.142, 0.176), smoothstep(0.78, 1.0, h0));
+        float grain = n2(q * 1.1) * 0.6 + n2(q * 3.7) * 0.4;
+        vec3 col = rock * (0.30 + 1.35 * diff) * (0.78 + grain * 0.44);
+        col *= 0.86 + 0.28 * n2(q * 0.55);
+        // ridged crater rims catch the key light
+        float ridge = 1.0 - abs(2.0 * n2(q * 0.055 + 17.0) - 1.0);
+        ridge = pow(ridge, 4.0);
+        col += vec3(0.055, 0.050, 0.070) * ridge * (0.35 + 0.65 * diff);
+        col += vec3(0.022, 0.015, 0.050) * (0.5 + 0.5 * Ng.y);
+
+        // airlight: the surface recedes into the atmosphere near the limb
+        float dist = length(q - uCam);
+        float haze = smoothstep(60.0, 320.0, dist);
+        col = mix(col, vec3(0.055, 0.038, 0.100), haze * 0.85);
+
+        // razor limb line + soft underglow, exact on the silhouette
+        float mu = max(dot(Ng, V), 0.0);
+        col += vec3(0.70, 0.68, 1.0) * pow(1.0 - mu, 40.0) * 1.25;
+        col += vec3(0.30, 0.24, 0.55) * pow(1.0 - mu, 6.0) * 0.35;
+
+        // mark light pool + heartbeat rings live in the surface itself
         float md = length(q - uMark);
-        float core = exp(-md * md / 9.0);
-        float halo = exp(-md * md / 81.0);
+        float core = exp(-md * md / 26.0);
+        float halo = exp(-md * md / 190.0);
         col += mix(vec3(0.30, 0.17, 0.62), vec3(0.82, 0.70, 1.0), core) *
-               (halo * 0.035 + core * 0.05) * (1.0 + uPulse * 0.8);
+               (halo * 0.045 + core * 0.05) * (1.0 + uPulse * 0.8);
         float rings = 0.0;
         for (int i = 0; i < 4; i++) {
           float t = (uTime + uWaves[i]) / 1.2;
           if (t > 0.0 && t < 1.0) {
-            float r = t * 34.0;
-            rings += smoothstep(2.2, 0.0, abs(md - r)) * (1.0 - t) * (1.0 - t);
+            float r = t * 30.0;
+            rings += smoothstep(2.0, 0.0, abs(md - r)) * (1.0 - t) * (1.0 - t);
           }
         }
-        col += vec3(0.55, 0.42, 0.95) * rings * 0.35;
+        col += vec3(0.55, 0.42, 0.95) * rings * 0.30;
         gl_FragColor = vec4(col, 1.0);
       }`,
   });
-  const ground = new THREE.Mesh(new THREE.CircleGeometry(3400, 96), groundMat);
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.set(0, GROUND_Y, 0);
-  ground.renderOrder = -4;
-  ground.frustumCulled = false;
-  scene.add(ground);
+  const planet = new THREE.Mesh(
+    new THREE.SphereGeometry(PLANET_RADIUS, 384, 96, 0, Math.PI * 2, 0, 0.42),
+    groundMat,
+  );
+  planet.position.copy(PLANET_CENTER);
+  planet.renderOrder = -2;
+  planet.frustumCulled = false;
+  scene.add(planet);
 
-  // jagged terrain rings: silhouette layers that read from every orbit angle
-  function addTerrainRing(
-    radius: number,
-    peak: number,
-    segments: number,
-    seed: number,
-    base: THREE.Color,
-    top: THREE.Color,
-  ) {
-    const sr = mulberry32(seed);
-    const heights: number[] = [];
-    let h = 0.5;
-    for (let i = 0; i < segments; i++) {
-      h = h * 0.55 + sr() * 0.45;
-      heights.push(peak * (0.72 + h * 0.28));
-    }
-    const baseY = GROUND_Y;
-    const pos = new Float32Array((segments + 1) * 2 * 3);
-    const hs = new Float32Array((segments + 1) * 2);
-    for (let i = 0; i <= segments; i++) {
-      const a = (i / segments) * Math.PI * 2;
-      const x = Math.cos(a) * radius;
-      const z = Math.sin(a) * radius;
-      const hh = heights[i % segments];
-      const k = i * 6;
-      pos[k] = x; pos[k + 1] = baseY - 6; pos[k + 2] = z;
-      pos[k + 3] = x; pos[k + 4] = baseY + hh; pos[k + 5] = z;
-      hs[i * 2] = 0; hs[i * 2 + 1] = hh / peak;
-    }
-    const idx: number[] = [];
-    for (let i = 0; i < segments; i++) {
-      const a = i * 2, b = i * 2 + 1, c = i * 2 + 2, d = i * 2 + 3;
-      idx.push(a, c, b, b, c, d);
-    }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    g.setAttribute("aH", new THREE.BufferAttribute(hs, 1));
-    g.setIndex(idx);
-    const m = new THREE.ShaderMaterial({
-      side: THREE.DoubleSide,
-      uniforms: { uBase: { value: base }, uTop: { value: top } },
-      vertexShader: `attribute float aH; varying float vH;
-        void main(){ vH = aH; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-      fragmentShader: `precision highp float; varying float vH;
-        uniform vec3 uBase; uniform vec3 uTop;
-        void main(){ gl_FragColor = vec4(mix(uBase, uTop, smoothstep(0.0, 1.0, vH)), 1.0); }`,
-    });
-    const mesh = new THREE.Mesh(g, m);
-    mesh.renderOrder = -2;
-    mesh.frustumCulled = false;
-    scene.add(mesh);
-  }
-  addTerrainRing(96, 14, 220, 4101, new THREE.Color("#060510"), new THREE.Color("#2a1a4a"));
-  addTerrainRing(156, 24, 260, 5202, new THREE.Color("#090713"), new THREE.Color("#3d2766"));
-
-  /* shapes */
+  /* shapes: each sampled at its own proportions, then normalized so every
+     scene occupies the same frame footprint (the reference orb scale) */
   const rand = mulberry32(20261105);
   const SHAPES: Float32Array[] = [
     sampleGlyph(COUNT, rand),
@@ -801,6 +834,14 @@ export function createHeroScene(
     sampleHeart(COUNT, rand),
     sampleTorus(COUNT, rand),
   ];
+  for (const data of SHAPES) {
+    let maxR2 = 0;
+    for (let i = 0; i < data.length; i += 3) {
+      maxR2 = Math.max(maxR2, data[i] ** 2 + data[i + 1] ** 2 + data[i + 2] ** 2);
+    }
+    const s = 0.66 / Math.sqrt(maxR2);
+    for (let i = 0; i < data.length; i++) data[i] *= s;
+  }
   const targetTextures = SHAPES.map((data) => {
     const rgba = new Float32Array(COUNT * 4);
     for (let i = 0; i < COUNT; i++) {
@@ -900,7 +941,7 @@ export function createHeroScene(
   {
     const r2 = mulberry32(777);
     const pal = [PALETTE.PRIMARY, PALETTE.SECONDARY, PALETTE.TERTIARY, PALETTE.DEEP, PALETTE.WHITE];
-    const weights = [0.42, 0.22, 0.16, 0.14, 0.06];
+    const weights = [0.40, 0.26, 0.20, 0.12, 0.02];
     for (let i = 0; i < COUNT; i++) {
       texCoords[i * 2] = ((i % TEX) + 0.5) / TEX;
       texCoords[i * 2 + 1] = (Math.floor(i / TEX) + 0.5) / TEX;
@@ -936,7 +977,7 @@ export function createHeroScene(
     centerGlowBoost: { value: 0 },
     GLOW_COLOR_U: { value: GLOW_COLOR },
     CENTER_GLOW_COLOR_U: { value: CENTER_GLOW_COLOR },
-    CENTER_GLOW_OPACITY_U: { value: 0.2 },
+    CENTER_GLOW_OPACITY_U: { value: 0.10 },
     TINT_COLOR_U: { value: TINT_COLOR },
     ENERGY_COLOR_U: { value: ENERGY_COLOR },
     burstIntensity: { value: 0 },
@@ -959,10 +1000,14 @@ export function createHeroScene(
     });
   const pointsMat = makePointsMat(1, true);
 
-  const WORLD_SCALE = 8.2; // unit-space sim -> world-size mark (reference ~35% frame height)
+  const WORLD_SCALE = 6.6; // unit-space sim -> world-size mark (~30% frame width)
+  const NARROW_SCALE = 0.42;
+  const markScale = () => WORLD_SCALE * (camera.aspect < 0.9 ? NARROW_SCALE : 1);
+  const markPointSize = () => PARTICLE_SIZE * (camera.aspect < 0.9 ? 0.38 : 1);
+  renderUniforms.size.value = markPointSize();
   const points = new THREE.Points(geo, pointsMat);
   points.position.set(markX(), MARK_Y, 0);
-  points.scale.setScalar(WORLD_SCALE);
+  points.scale.setScalar(markScale());
   points.frustumCulled = false;
   points.renderOrder = 2;
   scene.add(points);
@@ -1003,7 +1048,7 @@ export function createHeroScene(
   });
   const embers = new THREE.Points(emberGeo, emberMat);
   embers.position.copy(points.position);
-  embers.scale.setScalar(WORLD_SCALE);
+  embers.scale.setScalar(markScale());
   embers.frustumCulled = false;
   embers.renderOrder = 3;
   scene.add(embers);
@@ -1188,6 +1233,13 @@ export function createHeroScene(
     const dip = Math.sin(p * Math.PI) ** 2;
     const radius = ORBIT_RADIUS - (ORBIT_RADIUS - ORBIT_RADIUS * ORBIT_CLOSE_FACTOR) * dip;
     const oy = ORBIT_Y - 5 * dip;
+    // keep the mark at a steady frame footprint through the approach (reference
+    // orb holds ~1/3 width) while the camera still gains depth from the limb
+    const distComp = 1 - (1 - ORBIT_CLOSE_FACTOR) * dip;
+    points.scale.setScalar(markScale() * distComp);
+    embers.scale.setScalar(markScale() * distComp);
+    renderUniforms.size.value = markPointSize() * distComp;
+    emberUniforms.size.value = markPointSize() * 0.5 * distComp;
     camera.position.set(
       points.position.x + radius * Math.sin(angle),
       oy,
@@ -1217,10 +1269,16 @@ export function createHeroScene(
     const a = stops[seg];
     const b = stops[seg + 1];
     const lz = points.position.z + a[2] + (b[2] - a[2]) * f - flyT * 26;
+    // composition: hold the mark right of the headline and above the limb.
+    // shift along the camera's own right vector so it stays put through the orbit
+    const compAmount = (camera.aspect < 0.9 ? 0 : 2.8) * (1 - flyT);
+    const compX = -compAmount * Math.cos(angle);
+    const compZ = compAmount * Math.sin(angle);
+    const compY = (camera.aspect < 0.9 ? -1.2 : -2.0) * (1 - flyT);
     camera.lookAt(
-      points.position.x,
-      points.position.y,
-      lz,
+      points.position.x + compX,
+      points.position.y + compY,
+      lz + compZ,
     );
     // per-shape group rotation (heart faces the camera at its orbit azimuth)
     const rotT = easeSmooth(p) * (SHAPE_ROTATIONS.length - 1);
@@ -1294,6 +1352,10 @@ export function createHeroScene(
       camera.updateProjectionMatrix();
       const cx = markX();
       points.position.x = cx;
+      points.scale.setScalar(markScale());
+      embers.scale.setScalar(markScale());
+      renderUniforms.size.value = markPointSize();
+      emberUniforms.size.value = markPointSize() * 0.5;
     },
     dispose() {
       cancelAnimationFrame(raf);
@@ -1310,7 +1372,7 @@ export function createHeroScene(
       domeMat.dispose();
       starGeo.dispose();
       starMat.dispose();
-      ground.geometry.dispose();
+      planet.geometry.dispose();
       groundMat.dispose();
       dustGeo.dispose();
       (dust.material as THREE.Material).dispose();

@@ -237,7 +237,7 @@ export default function HeroWorld() {
 
         {/* statement stack — fades during the finale dive */}
         <div
-          className="absolute bottom-[9vh] left-6 z-10 max-w-[86vw] transition-opacity duration-500 md:left-12 md:max-w-[62vw]"
+          className="absolute bottom-[16vh] left-6 z-10 max-w-[86vw] transition-opacity duration-500 sm:bottom-[9vh] md:left-12 md:max-w-[62vw]"
           style={{ opacity: finaleFade ? 0 : 1 }}
         >
           {HERO_SCENES.map((s, i) => {
