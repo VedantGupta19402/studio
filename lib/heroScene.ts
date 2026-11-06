@@ -27,7 +27,11 @@ const RETURN_SHARPNESS = 4;
 const PULSE_AMPLITUDE = 0.3;
 const PARTICLE_SIZE = 0.48;
 const SHAPE_SCALE = 5;
-const WATER_LEVEL = 0.22;
+/* environment: a closed deep-space shell around the whole journey.
+   the mark floats above a planet limb; the camera dips to -1.6, so the
+   planet surface sits well below it (no clipping at any orbit angle). */
+const MARK_Y = 7.62;
+const GROUND_Y = -8;
 
 /* orbit camera (reference algorithm verbatim; constants adapted to our world) */
 const CAMERA_POSITION: [number, number, number] = [5.44, 3.4, 34];
@@ -561,7 +565,7 @@ export function createHeroScene(
   renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(50, canvas.clientWidth / canvas.clientHeight, 0.1, 300);
+  const camera = new THREE.PerspectiveCamera(50, canvas.clientWidth / canvas.clientHeight, 0.1, 4000);
   camera.position.set(0.6, 3.4, 34);
   camera.lookAt(4.2, 6.8, 0);
 
@@ -569,120 +573,224 @@ export function createHeroScene(
   const TEX = tierHigh ? 280 : 220; // reference: 280 high / 220 low
   const COUNT = TEX * TEX;
 
-  /* environment (dark re-grade, world scale) */
-  const SKY_VERT = `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`;
-  const sky = new THREE.Mesh(
-    new THREE.PlaneGeometry(200, 120),
-    new THREE.ShaderMaterial({
-      depthWrite: false,
-      vertexShader: SKY_VERT,
-      fragmentShader: `varying vec2 vUv; void main(){
-        vec3 top = vec3(0.059,0.051,0.102);
-        vec3 mid = vec3(0.10,0.075,0.20);
-        vec3 horizon = vec3(0.16,0.10,0.30);
-        float h = smoothstep(0.0,1.0,vUv.y);
-        vec3 col = mix(horizon, top, pow(h,0.72));
-        col = mix(mid, col, smoothstep(0.12,0.55,h));
-        gl_FragColor = vec4(col,1.0); }`,
-    }),
-  );
-  sky.position.set(0, 8, -50);
-  sky.renderOrder = -3;
-  scene.add(sky);
+  /* ---------- 360° deep-space environment (hamol theme) ----------
+     The orbit camera makes a full revolution and the finale flies forward,
+     so every background layer must surround the stage. No flat backdrops. */
+  const markX = () => (camera.aspect < 0.9 ? 0.8 : 4.2);
 
-  function ridgeShape(seed: number, base: number, amp: number, w: number): THREE.Shape {
-    const rand = mulberry32(seed);
-    const s = new THREE.Shape();
-    s.moveTo(-w, -8);
-    let x = -w;
-    let y = base;
-    while (x < w) {
-      s.lineTo(x, y);
-      x += 0.7 + rand() * 1.2;
-      y = base + (rand() - 0.35) * amp;
+  // sky dome: near-black violet gradient + faint nebula + horizon atmosphere
+  const domeUniforms = { uTime: { value: 0 } };
+  const domeMat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    depthTest: false,
+    uniforms: domeUniforms,
+    vertexShader: `varying vec3 vDir;
+      void main(){ vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+    fragmentShader: `precision highp float;
+      varying vec3 vDir;
+      uniform float uTime;
+      float hash(vec3 p){ return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+      float vnoise(vec3 p){
+        vec3 i = floor(p); vec3 f = fract(p); f = f*f*(3.0-2.0*f);
+        float n000=hash(i), n100=hash(i+vec3(1.0,0.0,0.0)), n010=hash(i+vec3(0.0,1.0,0.0)), n110=hash(i+vec3(1.0,1.0,0.0));
+        float n001=hash(i+vec3(0.0,0.0,1.0)), n101=hash(i+vec3(1.0,0.0,1.0)), n011=hash(i+vec3(0.0,1.0,1.0)), n111=hash(i+vec3(1.0,1.0,1.0));
+        return mix(mix(mix(n000,n100,f.x), mix(n010,n110,f.x), f.y), mix(mix(n001,n101,f.x), mix(n011,n111,f.x), f.y), f.z);
+      }
+      float fbm(vec3 p){ float s=0.0, a=0.5; for(int i=0;i<3;i++){ s += a*vnoise(p); p*=2.03; a*=0.5; } return s; }
+      void main(){
+        vec3 d = normalize(vDir);
+        float h = d.y;
+        vec3 zenith  = vec3(0.013, 0.010, 0.033);
+        vec3 mid     = vec3(0.030, 0.021, 0.060);
+        vec3 horizon = vec3(0.068, 0.044, 0.140);
+        vec3 col = mix(horizon, zenith, smoothstep(0.0, 0.62, h));
+        col = mix(mid, col, smoothstep(0.04, 0.30, h));
+        float neb = smoothstep(0.45, 0.92, fbm(d * 2.6 + vec3(0.0, uTime * 0.004, 0.0)));
+        col += vec3(0.14, 0.07, 0.28) * neb * smoothstep(0.03, 0.42, h) * 0.45;
+        // thin atmosphere rim: a razor line at the limb plus a soft underglow
+        float band = exp(-abs(h) / 0.020);
+        col += mix(vec3(0.26, 0.16, 0.52), vec3(0.84, 0.78, 1.0), band) * band * 0.34;
+        col += vec3(0.085, 0.055, 0.17) * exp(-max(h, 0.0) / 0.22) * 0.38;
+        gl_FragColor = vec4(col, 1.0);
+      }`,
+  });
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(3600, 48, 32), domeMat);
+  dome.renderOrder = -6;
+  dome.frustumCulled = false;
+  scene.add(dome);
+
+  // starfield on the upper hemisphere (distant, parallax-free, slow twinkle)
+  const STAR_N = 2600;
+  const starGeo = new THREE.BufferGeometry();
+  {
+    const sp = new Float32Array(STAR_N * 3);
+    const ss = new Float32Array(STAR_N);
+    const sph = new Float32Array(STAR_N);
+    const sr = mulberry32(9091);
+    for (let i = 0; i < STAR_N; i++) {
+      const y = 0.02 + Math.pow(sr(), 0.55) * 0.98;
+      const a = sr() * Math.PI * 2;
+      const r = Math.sqrt(1 - y * y);
+      sp[i * 3] = Math.cos(a) * r * 3400;
+      sp[i * 3 + 1] = y * 3400;
+      sp[i * 3 + 2] = Math.sin(a) * r * 3400;
+      ss[i] = 0.9 + Math.pow(sr(), 3) * 2.2;
+      sph[i] = sr();
     }
-    s.lineTo(w, -8);
-    s.closePath();
-    return s;
+    starGeo.setAttribute("position", new THREE.BufferAttribute(sp, 3));
+    starGeo.setAttribute("aSize", new THREE.BufferAttribute(ss, 1));
+    starGeo.setAttribute("aPhase", new THREE.BufferAttribute(sph, 1));
   }
-  const ridgeColors = [0x241a42, 0x171126, 0x0b0916];
-  for (let i = 0; i < 3; i++) {
-    const m = new THREE.Mesh(
-      new THREE.ShapeGeometry(ridgeShape(1000 + i * 77, 0.5 + i * 1.1, 3.0 - i * 0.8, 110)),
-      new THREE.MeshBasicMaterial({ color: ridgeColors[i] }),
-    );
-    m.position.set(0, WATER_LEVEL - 0.35, -22 + i * 7);
-    m.renderOrder = -2;
-    scene.add(m);
-  }
-
-  const water = new THREE.Mesh(
-    new THREE.PlaneGeometry(200, 60),
-    new THREE.ShaderMaterial({
-      transparent: true,
-      depthWrite: false,
-      vertexShader: SKY_VERT,
-      fragmentShader: `varying vec2 vUv; void main(){
-        vec3 top = vec3(0.13,0.085,0.26);
-        vec3 bottom = vec3(0.028,0.024,0.055);
-        gl_FragColor = vec4(mix(top, bottom, pow(vUv.y,0.8)), 0.93); }`,
-    }),
-  );
-  water.rotation.x = -Math.PI / 2;
-  water.position.set(0, WATER_LEVEL, 0);
-  water.renderOrder = -1;
-  scene.add(water);
-
-  // floor ripple (reference floorRipple): expanding violet wave rings on the water
-  const waterUniforms = { waveTimes: { value: [-10, -10, -10, -10] } };
-  const rippleMat = new THREE.ShaderMaterial({
+  const starUniforms = { uTime: { value: 0 }, pixelRatio: { value: dpr } };
+  const starMat = new THREE.ShaderMaterial({
+    uniforms: starUniforms,
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
-    vertexShader: SKY_VERT,
-    fragmentShader: `varying vec2 vUv;
-      uniform float waveTimes[4];
+    vertexShader: `attribute float aSize; attribute float aPhase;
+      uniform float uTime; uniform float pixelRatio; varying float vA;
       void main(){
-        vec2 c = vUv - 0.5;
-        c.x *= 3.3;
-        float d = length(c);
-        vec3 col = vec3(0.0);
-        float a = 0.0;
+        float tw = 0.55 + 0.45 * sin(uTime * (0.5 + aPhase) + aPhase * 6.28318);
+        vA = 0.25 + tw * 0.65;
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        gl_Position = projectionMatrix * mv;
+        gl_PointSize = aSize * pixelRatio * (0.85 + 0.3 * tw);
+      }`,
+    fragmentShader: `precision highp float; varying float vA;
+      void main(){
+        vec2 uv = gl_PointCoord - 0.5; float d = length(uv);
+        if (d > 0.5) discard;
+        float a = smoothstep(0.5, 0.05, d);
+        gl_FragColor = vec4(mix(vec3(0.72, 0.64, 1.0), vec3(1.0), a), a * vA);
+      }`,
+  });
+  const stars = new THREE.Points(starGeo, starMat);
+  stars.renderOrder = -3;
+  stars.frustumCulled = false;
+  scene.add(stars);
+
+  // planet surface: a flat ground disc that fades into the horizon band.
+  // A curved 1500-unit sphere read as a bright lavender wash at grazing angles
+  // and showed its own coarse tessellation near the pole, so the local floor is
+  // a single plane and the curvature lives only in the sky dome + terrain rings.
+  const waveTimes = new Float32Array(4).fill(-10);
+  const groundUniforms = {
+    uCam: { value: new THREE.Vector2() },
+    uMark: { value: new THREE.Vector2() },
+    uTime: { value: 0 },
+    uPulse: { value: 0 },
+    uWaves: { value: waveTimes },
+  };
+  const groundMat = new THREE.ShaderMaterial({
+    uniforms: groundUniforms,
+    vertexShader: `varying vec3 vWorld;
+      void main(){
+        vWorld = (modelMatrix * vec4(position, 1.0)).xyz;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: `precision highp float;
+      varying vec3 vWorld;
+      uniform vec2 uCam; uniform vec2 uMark; uniform float uTime; uniform float uPulse;
+      uniform float uWaves[4];
+      float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float n2(vec2 p){
+        vec2 i = floor(p); vec2 f = fract(p); f = f*f*(3.0-2.0*f);
+        float a=hash(i), b=hash(i+vec2(1.0,0.0)), c=hash(i+vec2(0.0,1.0)), d=hash(i+vec2(1.0,1.0));
+        return mix(mix(a,b,f.x), mix(c,d,f.x), f.y);
+      }
+      void main(){
+        vec2 q = vWorld.xz;
+        float rock = n2(q * 0.010) * 0.6 + n2(q * 0.045) * 0.4;
+        float grain = n2(q * 0.35) * 0.5 + n2(q * 1.10) * 0.5;
+        vec3 col = mix(vec3(0.010, 0.009, 0.021), vec3(0.033, 0.025, 0.060), rock);
+        col += vec3(0.013, 0.010, 0.026) * grain * 0.7;
+        // distance haze lifts the far rock into the sky's horizon tone; the ramp
+        // starts near the camera so the light doesn't collapse into a 2px strip
+        float dist = length(q - uCam);
+        float haze = smoothstep(70.0, 900.0, dist);
+        col = mix(col, vec3(0.062, 0.040, 0.124), haze * 0.9);
+
+        // mark light pool + heartbeat rings live in the surface itself, so there
+        // are no floating additive planes to expose their edges at grazing angles
+        float md = length(q - uMark);
+        float core = exp(-md * md / 9.0);
+        float halo = exp(-md * md / 81.0);
+        col += mix(vec3(0.30, 0.17, 0.62), vec3(0.82, 0.70, 1.0), core) *
+               (halo * 0.035 + core * 0.05) * (1.0 + uPulse * 0.8);
+        float rings = 0.0;
         for (int i = 0; i < 4; i++) {
-          float t = (0.0 - waveTimes[i]) / 1.2;
+          float t = (uTime + uWaves[i]) / 1.2;
           if (t > 0.0 && t < 1.0) {
-            float r = t * 0.45;
-            float band = smoothstep(0.06, 0.0, abs(d - r)) * (1.0 - t) * (1.0 - t);
-            col += mix(vec3(0.42, 0.26, 0.78), vec3(0.95), t * 0.4) * band * 0.55;
-            a += band;
+            float r = t * 34.0;
+            rings += smoothstep(2.2, 0.0, abs(md - r)) * (1.0 - t) * (1.0 - t);
           }
         }
-        gl_FragColor = vec4(col, clamp(a, 0.0, 1.0));
+        col += vec3(0.55, 0.42, 0.95) * rings * 0.35;
+        gl_FragColor = vec4(col, 1.0);
       }`,
-    uniforms: waterUniforms,
   });
-  const ripple = new THREE.Mesh(new THREE.PlaneGeometry(200, 60), rippleMat);
-  ripple.rotation.x = -Math.PI / 2;
-  ripple.position.set(0, WATER_LEVEL + 0.05, 0);
-  ripple.renderOrder = 0;
-  scene.add(ripple);
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(3400, 96), groundMat);
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.set(0, GROUND_Y, 0);
+  ground.renderOrder = -4;
+  ground.frustumCulled = false;
+  scene.add(ground);
 
-  const glow = new THREE.Mesh(
-    new THREE.PlaneGeometry(110, 8),
-    new THREE.ShaderMaterial({
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      vertexShader: SKY_VERT,
-      fragmentShader: `varying vec2 vUv; void main(){
-        float x = smoothstep(0.0,0.5,vUv.x)*smoothstep(1.0,0.5,vUv.x);
-        float y = smoothstep(0.0,0.8,vUv.y)*smoothstep(1.0,0.2,vUv.y);
-        gl_FragColor = vec4(vec3(0.42,0.26,0.78)*x*y*0.55, 1.0); }`,
-    }),
-  );
-  glow.position.set(0, WATER_LEVEL + 1.6, -10);
-  glow.renderOrder = -1;
-  scene.add(glow);
+  // jagged terrain rings: silhouette layers that read from every orbit angle
+  function addTerrainRing(
+    radius: number,
+    peak: number,
+    segments: number,
+    seed: number,
+    base: THREE.Color,
+    top: THREE.Color,
+  ) {
+    const sr = mulberry32(seed);
+    const heights: number[] = [];
+    let h = 0.5;
+    for (let i = 0; i < segments; i++) {
+      h = h * 0.55 + sr() * 0.45;
+      heights.push(peak * (0.72 + h * 0.28));
+    }
+    const baseY = GROUND_Y;
+    const pos = new Float32Array((segments + 1) * 2 * 3);
+    const hs = new Float32Array((segments + 1) * 2);
+    for (let i = 0; i <= segments; i++) {
+      const a = (i / segments) * Math.PI * 2;
+      const x = Math.cos(a) * radius;
+      const z = Math.sin(a) * radius;
+      const hh = heights[i % segments];
+      const k = i * 6;
+      pos[k] = x; pos[k + 1] = baseY - 6; pos[k + 2] = z;
+      pos[k + 3] = x; pos[k + 4] = baseY + hh; pos[k + 5] = z;
+      hs[i * 2] = 0; hs[i * 2 + 1] = hh / peak;
+    }
+    const idx: number[] = [];
+    for (let i = 0; i < segments; i++) {
+      const a = i * 2, b = i * 2 + 1, c = i * 2 + 2, d = i * 2 + 3;
+      idx.push(a, c, b, b, c, d);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    g.setAttribute("aH", new THREE.BufferAttribute(hs, 1));
+    g.setIndex(idx);
+    const m = new THREE.ShaderMaterial({
+      side: THREE.DoubleSide,
+      uniforms: { uBase: { value: base }, uTop: { value: top } },
+      vertexShader: `attribute float aH; varying float vH;
+        void main(){ vH = aH; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+      fragmentShader: `precision highp float; varying float vH;
+        uniform vec3 uBase; uniform vec3 uTop;
+        void main(){ gl_FragColor = vec4(mix(uBase, uTop, smoothstep(0.0, 1.0, vH)), 1.0); }`,
+    });
+    const mesh = new THREE.Mesh(g, m);
+    mesh.renderOrder = -2;
+    mesh.frustumCulled = false;
+    scene.add(mesh);
+  }
+  addTerrainRing(96, 14, 220, 4101, new THREE.Color("#060510"), new THREE.Color("#2a1a4a"));
+  addTerrainRing(156, 24, 260, 5202, new THREE.Color("#090713"), new THREE.Color("#3d2766"));
 
   /* shapes */
   const rand = mulberry32(20261105);
@@ -784,7 +892,7 @@ export function createHeroScene(
     ip.dispose();
   }
 
-  /* render points + reflection */
+  /* render points */
   const geo = new THREE.BufferGeometry();
   const texCoords = new Float32Array(COUNT * 2);
   const colors = new Float32Array(COUNT * 3);
@@ -850,23 +958,14 @@ export function createHeroScene(
       depthTest: true,
     });
   const pointsMat = makePointsMat(1, true);
-  const reflMat = makePointsMat(0.10, false);
 
   const WORLD_SCALE = 8.2; // unit-space sim -> world-size mark (reference ~35% frame height)
   const points = new THREE.Points(geo, pointsMat);
-  const markX = () => (camera.aspect < 0.9 ? 0.8 : 4.2);
-  points.position.set(markX(), WATER_LEVEL + 7.4, 0);
+  points.position.set(markX(), MARK_Y, 0);
   points.scale.setScalar(WORLD_SCALE);
   points.frustumCulled = false;
-  points.renderOrder = 1;
+  points.renderOrder = 2;
   scene.add(points);
-
-  const reflection = new THREE.Points(geo, reflMat);
-  reflection.position.set(markX(), 2 * WATER_LEVEL - (WATER_LEVEL + 7.4), 0);
-  reflection.scale.set(WORLD_SCALE, -WORLD_SCALE, WORLD_SCALE);
-  reflection.frustumCulled = false;
-  reflection.renderOrder = 0;
-  scene.add(reflection);
 
   /* embers */
   const EMBER_N = tierHigh ? 3000 : 2000;
@@ -906,23 +1005,25 @@ export function createHeroScene(
   embers.position.copy(points.position);
   embers.scale.setScalar(WORLD_SCALE);
   embers.frustumCulled = false;
-  embers.renderOrder = 2;
+  embers.renderOrder = 3;
   scene.add(embers);
 
-  /* dust / fireflies */
+  /* dust / fireflies — spread around the whole stage so the orbit never empties out */
   const dustGeo = new THREE.BufferGeometry();
-  const DUST_N = 150;
+  const DUST_N = 280;
   const dustPos = new Float32Array(DUST_N * 3);
+  const DUST_CEIL = 30;
   for (let i = 0; i < DUST_N; i++) {
-    dustPos[i * 3] = (rand() - 0.5) * 60;
-    dustPos[i * 3 + 1] = rand() * 22 - 1;
-    dustPos[i * 3 + 2] = (rand() - 0.5) * 30;
+    dustPos[i * 3] = (rand() - 0.5) * 130;
+    dustPos[i * 3 + 1] = GROUND_Y + 2 + rand() * (DUST_CEIL - GROUND_Y - 2);
+    dustPos[i * 3 + 2] = (rand() - 0.5) * 130;
   }
   dustGeo.setAttribute("position", new THREE.BufferAttribute(dustPos, 3));
   const dust = new THREE.Points(
     dustGeo,
-    new THREE.PointsMaterial({ color: 0xb57bff, size: 0.06, transparent: true, opacity: 0.45, depthWrite: false }),
+    new THREE.PointsMaterial({ color: 0xb57bff, size: 0.07, transparent: true, opacity: 0.5, depthWrite: false }),
   );
+  dust.renderOrder = 4;
   scene.add(dust);
 
   /* state + loop */
@@ -942,7 +1043,6 @@ export function createHeroScene(
   const interactRef = { value: 0 };
   const progressRef = { value: 0 };
 
-  let waterWave0 = -10;
   const spawnHeartbeat = () => {
     // reference spawnBatch: batch embers from random shape-surface points,
     // radial velocity + jitter, lifetime 2.3 * (0.6..1.4)
@@ -969,7 +1069,7 @@ export function createHeroScene(
     (emberGeo.attributes.aSpawnTime as THREE.BufferAttribute).needsUpdate = true;
     (emberGeo.attributes.aLifetime as THREE.BufferAttribute).needsUpdate = true;
     // floor ripple: 4-slot wave ring buffer (reference triggerWave)
-    waterUniforms.waveTimes.value[waterWaveIdx % 4] = -elapsed;
+    waveTimes[waterWaveIdx % 4] = -elapsed;
     waterWaveIdx++;
   };
   let waterWaveIdx = 0;
@@ -1026,7 +1126,12 @@ export function createHeroScene(
     renderUniforms.burstIntensity.value = effBurst;
     renderUniforms.centerGlowPulse.value = 1 + pulseIntensity * PULSE_AMPLITUDE_GLOW;
     renderUniforms.centerGlowBoost.value = pulseIntensity * 0.8;
-    void waterWave0;
+
+    // environment life: nebula drift, star twinkle, ground haze follows the camera
+    domeUniforms.uTime.value = elapsed;
+    starUniforms.uTime.value = elapsed;
+    groundUniforms.uTime.value = elapsed;
+    groundUniforms.uPulse.value = pulseIntensity;
 
     mouseVel.multiplyScalar(0.86);
     simUniforms.uMouseVel.value.copy(mouseVel);
@@ -1131,13 +1236,14 @@ export function createHeroScene(
       ry = ry * (1 - blend) + frontal * blend;
     }
     points.rotation.y = ry + elapsed * 0.016;
-    reflection.rotation.y = points.rotation.y;
+    groundUniforms.uCam.value.set(camera.position.x, camera.position.z);
+    groundUniforms.uMark.value.set(points.position.x, points.position.z);
 
     // dust drift
     const dp = dustGeo.attributes.position as THREE.BufferAttribute;
     for (let i = 0; i < DUST_N; i++) {
       let y = dp.getY(i) + delta * (0.1 + (i % 7) * 0.02);
-      if (y > 22) y = -1;
+      if (y > DUST_CEIL) y = GROUND_Y + 2;
       dp.setY(i, y);
     }
     dp.needsUpdate = true;
@@ -1188,7 +1294,6 @@ export function createHeroScene(
       camera.updateProjectionMatrix();
       const cx = markX();
       points.position.x = cx;
-      reflection.position.x = cx;
     },
     dispose() {
       cancelAnimationFrame(raf);
@@ -1196,12 +1301,19 @@ export function createHeroScene(
       rtVel.forEach((t) => t.dispose());
       geo.dispose();
       pointsMat.dispose();
-      reflMat.dispose();
       emberGeo.dispose();
       emberMat.dispose();
       simVelMat.dispose();
       simPosMat.dispose();
       targetTextures.forEach((t) => t.dispose());
+      dome.geometry.dispose();
+      domeMat.dispose();
+      starGeo.dispose();
+      starMat.dispose();
+      ground.geometry.dispose();
+      groundMat.dispose();
+      dustGeo.dispose();
+      (dust.material as THREE.Material).dispose();
       renderer.dispose();
     },
   };
