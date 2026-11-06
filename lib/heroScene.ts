@@ -49,10 +49,13 @@ const SHAPE_ROTATIONS = [0, 0, 0, -(77 * Math.PI) / 180, 0]; // heart faces came
 const easeSmooth = (x: number) => x * x * (3 - 2 * x);
 
 /* energy heartbeat (reference: BURST_SPEED 0.5, fire window 0.8-0.9, SPAWN_BATCH 1600,
-   LIFETIME 2.3, pulse decay x0.05/s, centerGlowPulse = 1 + pulse * 0.3) */
-const BURST_SPEED = 0.5;
+   LIFETIME 2.3, pulse decay x0.05/s, centerGlowPulse = 1 + pulse * 0.3).
+   Tuned down after the first pass: the reference pulse is a shimmer, not a
+   shape-wide breath, so the kick, cadence and glow swell are all softer. */
+const BURST_SPEED = 0.34;
 const HEARTBEAT_WINDOW: [number, number] = [0.8, 0.9];
-const PULSE_AMPLITUDE_GLOW = 0.3;
+const PULSE_AMPLITUDE_GLOW = 0.14;
+const PULSE_KICK = 0.16;
 const PULSE_DECAY = 0.05;
 
 function sceneIndexForProgress(p: number): number {
@@ -672,6 +675,15 @@ export function createHeroScene(
         float wide = exp(-above / 0.016);
         col += mix(vec3(0.34, 0.25, 0.72), vec3(0.86, 0.89, 1.0), halo) * halo * 0.46;
         col += vec3(0.16, 0.12, 0.30) * wide * 0.12;
+
+        // limb airglow: a slow band of light just above the atmosphere line that
+        // undulates around the horizon so the limb reads alive, not painted
+        vec2 az = normalize(vec2(d.x, d.z) + vec2(0.0001));
+        float azim = atan(az.y, az.x);
+        float band = above - (0.022 + 0.007 * sin(azim * 2.0 + uTime * 0.16));
+        float aurora = exp(-pow(band / 0.010, 2.0));
+        float shimmer = 0.45 + 0.55 * sin(azim * 5.0 - uTime * 0.26 + sin(azim * 2.0 + uTime * 0.11) * 2.0);
+        col += vec3(0.30, 0.33, 0.74) * aurora * shimmer * 0.20;
         gl_FragColor = vec4(col, 1.0);
       }`,
   });
@@ -680,55 +692,129 @@ export function createHeroScene(
   dome.frustumCulled = false;
   scene.add(dome);
 
-  // starfield on the upper hemisphere (distant, parallax-free, slow twinkle)
-  const STAR_N = 2600;
-  const starGeo = new THREE.BufferGeometry();
-  {
-    const sp = new Float32Array(STAR_N * 3);
-    const ss = new Float32Array(STAR_N);
-    const sph = new Float32Array(STAR_N);
-    const sr = mulberry32(9091);
-    for (let i = 0; i < STAR_N; i++) {
+  // two star shells on the upper hemisphere: a far field plus a closer, dimmer
+  // layer whose drift against the far stars gives the orbit real parallax
+  const makeStarLayer = (opts: {
+    count: number; radius: number; seed: number;
+    sizeMin: number; sizeMax: number; alpha: number; twinkle: number;
+  }) => {
+    const geo = new THREE.BufferGeometry();
+    const sp = new Float32Array(opts.count * 3);
+    const ss = new Float32Array(opts.count);
+    const sph = new Float32Array(opts.count);
+    const sr = mulberry32(opts.seed);
+    for (let i = 0; i < opts.count; i++) {
       const y = 0.02 + Math.pow(sr(), 0.55) * 0.98;
       const a = sr() * Math.PI * 2;
       const r = Math.sqrt(1 - y * y);
-      sp[i * 3] = Math.cos(a) * r * 3400;
-      sp[i * 3 + 1] = y * 3400;
-      sp[i * 3 + 2] = Math.sin(a) * r * 3400;
-      ss[i] = 0.9 + Math.pow(sr(), 3) * 2.2;
+      sp[i * 3] = Math.cos(a) * r * opts.radius;
+      sp[i * 3 + 1] = y * opts.radius;
+      sp[i * 3 + 2] = Math.sin(a) * r * opts.radius;
+      ss[i] = opts.sizeMin + Math.pow(sr(), 3) * (opts.sizeMax - opts.sizeMin);
       sph[i] = sr();
     }
-    starGeo.setAttribute("position", new THREE.BufferAttribute(sp, 3));
-    starGeo.setAttribute("aSize", new THREE.BufferAttribute(ss, 1));
-    starGeo.setAttribute("aPhase", new THREE.BufferAttribute(sph, 1));
-  }
-  const starUniforms = { uTime: { value: 0 }, pixelRatio: { value: dpr } };
-  const starMat = new THREE.ShaderMaterial({
-    uniforms: starUniforms,
+    geo.setAttribute("position", new THREE.BufferAttribute(sp, 3));
+    geo.setAttribute("aSize", new THREE.BufferAttribute(ss, 1));
+    geo.setAttribute("aPhase", new THREE.BufferAttribute(sph, 1));
+    const uniforms = {
+      uTime: { value: 0 },
+      pixelRatio: { value: dpr },
+      uAlpha: { value: opts.alpha },
+      uTwinkle: { value: opts.twinkle },
+    };
+    const mat = new THREE.ShaderMaterial({
+      uniforms,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      vertexShader: `attribute float aSize; attribute float aPhase;
+        uniform float uTime; uniform float pixelRatio;
+        uniform float uAlpha; uniform float uTwinkle; varying float vA;
+        void main(){
+          float tw = 0.55 + 0.45 * sin(uTime * uTwinkle * (0.5 + aPhase) + aPhase * 6.28318);
+          vA = (0.25 + tw * 0.65) * uAlpha;
+          vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          gl_Position = projectionMatrix * mv;
+          gl_PointSize = aSize * pixelRatio * (0.85 + 0.3 * tw);
+        }`,
+      fragmentShader: `precision highp float; varying float vA;
+        void main(){
+          vec2 uv = gl_PointCoord - 0.5; float d = length(uv);
+          if (d > 0.5) discard;
+          float a = smoothstep(0.5, 0.05, d);
+          gl_FragColor = vec4(mix(vec3(0.72, 0.64, 1.0), vec3(1.0), a), a * vA);
+        }`,
+    });
+    const points = new THREE.Points(geo, mat);
+    points.renderOrder = -3;
+    points.frustumCulled = false;
+    scene.add(points);
+    return { points, uniforms };
+  };
+  const farStars = makeStarLayer({
+    count: 2600, radius: 3400, seed: 9091,
+    sizeMin: 0.9, sizeMax: 3.1, alpha: 1, twinkle: 1,
+  });
+  const nearStars = makeStarLayer({
+    count: 700, radius: 620, seed: 4177,
+    sizeMin: 0.45, sizeMax: 1.25, alpha: 0.55, twinkle: 0.35,
+  });
+
+  // rare shooting star: one faint tapered streak in the upper sky every ~15-25s.
+  // Mounted on the camera so it always crosses well above the limb at any orbit
+  // azimuth; it never touches the mark or the layout.
+  const skyRig = new THREE.Group();
+  camera.add(skyRig);
+  scene.add(camera);
+  const shootUniforms = { uOpacity: { value: 0 } };
+  const shootMat = new THREE.ShaderMaterial({
+    uniforms: shootUniforms,
     transparent: true,
     depthWrite: false,
+    depthTest: false,
     blending: THREE.AdditiveBlending,
-    vertexShader: `attribute float aSize; attribute float aPhase;
-      uniform float uTime; uniform float pixelRatio; varying float vA;
+    vertexShader: `varying vec2 vUv;
+      void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `precision highp float; varying vec2 vUv; uniform float uOpacity;
       void main(){
-        float tw = 0.55 + 0.45 * sin(uTime * (0.5 + aPhase) + aPhase * 6.28318);
-        vA = 0.25 + tw * 0.65;
-        vec4 mv = modelViewMatrix * vec4(position, 1.0);
-        gl_Position = projectionMatrix * mv;
-        gl_PointSize = aSize * pixelRatio * (0.85 + 0.3 * tw);
-      }`,
-    fragmentShader: `precision highp float; varying float vA;
-      void main(){
-        vec2 uv = gl_PointCoord - 0.5; float d = length(uv);
-        if (d > 0.5) discard;
-        float a = smoothstep(0.5, 0.05, d);
-        gl_FragColor = vec4(mix(vec3(0.72, 0.64, 1.0), vec3(1.0), a), a * vA);
+        float along = vUv.x;                      // 0 tail .. 1 head
+        float across = abs(vUv.y - 0.5) * 2.0;
+        float width = mix(0.06, 0.82, pow(along, 1.4));
+        float core = smoothstep(width, 0.0, across);
+        float fade = smoothstep(0.0, 0.22, along) * (1.0 - smoothstep(0.62, 1.0, along));
+        vec3 col = mix(vec3(0.55, 0.66, 1.0), vec3(1.0), core * core);
+        gl_FragColor = vec4(col, core * fade * uOpacity);
       }`,
   });
-  const stars = new THREE.Points(starGeo, starMat);
-  stars.renderOrder = -3;
-  stars.frustumCulled = false;
-  scene.add(stars);
+  const shoot = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), shootMat);
+  shoot.renderOrder = -1;
+  shoot.visible = false;
+  skyRig.add(shoot);
+  const shootDir = new THREE.Vector3();
+  let shootSpeed = 0;
+  let shootAge = 0;
+  let shootLife = 1;
+  let shootActive = false;
+  let nextShootAt = 8 + Math.random() * 8;
+
+  const spawnShoot = () => {
+    const halfH = 60 * Math.tan((camera.fov * Math.PI) / 360);
+    const halfW = halfH * camera.aspect;
+    const sign = Math.random() < 0.5 ? -1 : 1;
+    const drop = 0.2 + Math.random() * 0.22;
+    shootDir.set(sign * Math.cos(drop), -Math.sin(drop), 0).normalize();
+    shoot.rotation.z = Math.atan2(shootDir.y, shootDir.x);
+    shoot.position.set(
+      halfW * (Math.random() * 0.95 - 0.45),
+      halfH * (0.3 + Math.random() * 0.3),
+      -60,
+    );
+    shoot.scale.set(Math.max(12, halfW * 0.5), Math.max(0.7, halfW * 0.024), 1);
+    shootLife = 0.75 + Math.random() * 0.4;
+    shootSpeed = (halfW * 1.1) / shootLife;
+    shootAge = 0;
+    shootActive = true;
+  };
 
   // planet cap: a 23° spherical cap of a 2200-unit sphere whose surface sits
   // 22 units below the stage. The silhouette is the limb; normals are analytic
@@ -1091,7 +1177,7 @@ export function createHeroScene(
   const spawnHeartbeat = () => {
     // reference spawnBatch: batch embers from random shape-surface points,
     // radial velocity + jitter, lifetime 2.3 * (0.6..1.4)
-    const BATCH = Math.floor(EMBER_N * 0.22);
+    const BATCH = Math.floor(EMBER_N * 0.12);
     const src = SHAPES[sceneIdx];
     for (let k = 0; k < BATCH; k++) {
       const idx2 = Math.floor(Math.random() * COUNT);
@@ -1166,17 +1252,37 @@ export function createHeroScene(
     prevHeartbeatFired = inWindow;
     pulseIntensity *= Math.pow(PULSE_DECAY, delta);
     if (burst > 0) burst = Math.max(0, burst - delta * 2.4);
-    const effBurst = Math.max(burst, pulseIntensity * 0.55);
+    const effBurst = Math.max(burst, pulseIntensity * PULSE_KICK);
     simUniforms.burstIntensity.value = effBurst;
     renderUniforms.burstIntensity.value = effBurst;
     renderUniforms.centerGlowPulse.value = 1 + pulseIntensity * PULSE_AMPLITUDE_GLOW;
-    renderUniforms.centerGlowBoost.value = pulseIntensity * 0.8;
+    renderUniforms.centerGlowBoost.value = pulseIntensity * 0.3;
 
     // environment life: nebula drift, star twinkle, ground haze follows the camera
     domeUniforms.uTime.value = elapsed;
-    starUniforms.uTime.value = elapsed;
+    farStars.uniforms.uTime.value = elapsed;
+    nearStars.uniforms.uTime.value = elapsed;
     groundUniforms.uTime.value = elapsed;
-    groundUniforms.uPulse.value = pulseIntensity;
+
+    // rare shooting star
+    if (!reduced) {
+      if (!shootActive && elapsed >= nextShootAt) spawnShoot();
+      if (shootActive) {
+        shootAge += delta;
+        const t = shootAge / shootLife;
+        if (t >= 1) {
+          shootActive = false;
+          shoot.visible = false;
+          shootUniforms.uOpacity.value = 0;
+          nextShootAt = elapsed + 15 + Math.random() * 10;
+        } else {
+          shoot.visible = true;
+          shoot.position.addScaledVector(shootDir, delta * shootSpeed);
+          shootUniforms.uOpacity.value = Math.sin(Math.PI * t) * 0.85;
+        }
+      }
+    }
+    groundUniforms.uPulse.value = pulseIntensity * 0.5;
 
     mouseVel.multiplyScalar(0.86);
     simUniforms.uMouseVel.value.copy(mouseVel);
@@ -1372,8 +1478,12 @@ export function createHeroScene(
       targetTextures.forEach((t) => t.dispose());
       dome.geometry.dispose();
       domeMat.dispose();
-      starGeo.dispose();
-      starMat.dispose();
+      farStars.points.geometry.dispose();
+      (farStars.points.material as THREE.Material).dispose();
+      nearStars.points.geometry.dispose();
+      (nearStars.points.material as THREE.Material).dispose();
+      shoot.geometry.dispose();
+      shootMat.dispose();
       planet.geometry.dispose();
       groundMat.dispose();
       dustGeo.dispose();
