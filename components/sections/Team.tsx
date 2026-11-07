@@ -9,17 +9,19 @@ export default function Team() {
 
   useEffect(() => {
     if (prefersReducedMotion()) return;
-    const { gsap, ScrollTrigger } = registerGsap();
+    const { gsap } = registerGsap();
     const el = ref.current!;
-    gsap.fromTo(
-      el.querySelectorAll("[data-member]"),
-      { y: 56, opacity: 0 },
-      {
-        y: 0, opacity: 1, duration: 0.9, ease: "power3.out", stagger: 0.1,
-        scrollTrigger: { trigger: el, start: "top 72%" },
-      },
-    );
-    return () => { ScrollTrigger.getAll().forEach((t) => t.kill()); };
+    const ctx = gsap.context(() => {
+      gsap.fromTo(
+        el.querySelectorAll("[data-member]"),
+        { y: 56, opacity: 0 },
+        {
+          y: 0, opacity: 1, duration: 0.9, ease: "power3.out", stagger: 0.1,
+          scrollTrigger: { trigger: el, start: "top 72%" },
+        },
+      );
+    }, el);
+    return () => ctx.revert();
   }, []);
 
   return (

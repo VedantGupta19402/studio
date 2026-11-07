@@ -137,3 +137,12 @@ body {
   position: relative;
   z-index: 1;
 }
+
+/* nav is faded through the white finale handoff (HeroWorld drives the var) */
+header[data-site-nav] {
+  opacity: var(--nav-opacity, 1);
+  transition: opacity 240ms ease-out;
+}
+[data-nav-off] header[data-site-nav] {
+  pointer-events: none;
+}

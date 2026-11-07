@@ -44,7 +44,7 @@ const ORBIT_CLOSE_FACTOR = 0.6;
 const LOOKAT_OFFSETS: [number, number, number][] = [
   [0, -1.1, 0], [0, 2.5, 2.5], [0, 0.6, 2], [0, 1.6, 1.6], [0, 0, 0],
 ];
-const SHAPE_BREAKPOINTS = [0.18, 0.4, 0.65, 0.87];
+const SHAPE_BREAKPOINTS = [0.18, 0.4, 0.65, 0.76];
 const SHAPE_ROTATIONS = [0, 0, 0, -(77 * Math.PI) / 180, 0]; // heart faces camera at its orbit azimuth
 const easeSmooth = (x: number) => x * x * (3 - 2 * x);
 
@@ -52,9 +52,9 @@ const easeSmooth = (x: number) => x * x * (3 - 2 * x);
    or left keeps it upper-right, text right sends it upper-left. [screen-right,
    screen-up] in world units at the mark's depth, held per scene and eased
    across each breakpoint so the scroll stays reversible. */
-const STAGE_X = [2.8, -10.5, 3.6, 12.0, 4.6];
-const STAGE_Y = [1.6, 0.6, 0.8, 0.6, 2.4];
-const STAGE_SCALES = [1, 0.85, 0.88, 0.72, 0.9];
+const STAGE_X = [2.8, -10.5, 3.6, 12.0, 0];
+const STAGE_Y = [1.6, 0.6, 0.8, 0.6, 0.8];
+const STAGE_SCALES = [1, 0.85, 0.88, 0.72, 1.12];
 const STAGE_WINDOW = 0.035;
 function stationAt(values: number[], p: number): number {
   let v = values[0];
@@ -953,86 +953,176 @@ export function createHeroScene(
   planet.frustumCulled = false;
   scene.add(planet);
 
-  /* ---------- finale pearl ----------
-     Once the camera is through the ring, the world ahead is open azure. A small
-     iridescent pearl waits in the middle of it, breathing inside a soft halo —
-     the reference's soft reveal grammar, no flash cut. Its placement is on the
-     fly-through axis (MARK_Y, -34) so it lands dead-centre as the walls pass. */
-  const PEARL_POS = new THREE.Vector3(0, MARK_Y, -34);
-  const pearlUniforms = {
-    uTime: { value: 0 },
-    uOpacity: { value: 0 },
-  };
-  const pearlMat = new THREE.ShaderMaterial({
-    uniforms: pearlUniforms,
-    transparent: true,
-    depthWrite: false,
-    depthTest: true,
-    vertexShader: `varying vec3 vNormalW; varying vec3 vWorld;
-      void main(){
-        vNormalW = normalize(mat3(modelMatrix) * normal);
-        vWorld = (modelMatrix * vec4(position, 1.0)).xyz;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }`,
-    fragmentShader: `precision highp float;
-      varying vec3 vNormalW; varying vec3 vWorld;
-      uniform float uTime; uniform float uOpacity;
-      void main(){
-        vec3 N = normalize(vNormalW);
-        vec3 V = normalize(cameraPosition - vWorld);
-        float fres = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 2.6);
-        vec3 L = normalize(vec3(-0.38, 0.52, 0.76));
-        float lit = clamp(dot(N, L), 0.0, 1.0);
-        vec3 body = mix(vec3(0.34, 0.50, 0.86), vec3(0.97, 0.99, 1.0), pow(lit, 1.9));
-        // thin-film sheen drifting over the surface (pearl, not plastic)
-        float sheen = 0.5 + 0.5 * sin(fres * 9.0 + N.y * 5.0 - uTime * 0.5);
-        vec3 irid = 0.5 + 0.5 * cos(6.28318 * (vec3(0.0, 0.33, 0.67) + fres * 0.62 + uTime * 0.015));
-        vec3 col = mix(body, irid, 0.18 + 0.30 * sheen * (0.40 + fres));
-        col += fres * vec3(0.62, 0.82, 1.0) * 1.2;
-        col += vec3(0.10, 0.16, 0.30) * pow(1.0 - fres, 2.0) * 0.5;
-        // tight specular bead so it reads as a glossy pearl at small scale
-        float spec = pow(clamp(dot(reflect(-L, N), V), 0.0, 1.0), 28.0);
-        col += vec3(1.0) * spec * 1.15;
-        gl_FragColor = vec4(col, uOpacity);
-      }`,
-  });
-  const pearl = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 48), pearlMat);
-  pearl.position.copy(PEARL_POS);
-  pearl.renderOrder = 3;
-  pearl.visible = false;
-  scene.add(pearl);
+  /* ---------- finale ring reveal (reference tS / Ore shader, ported) ----------
+     The camera dives through the held torus and a thick white ring opens from
+     its hole until the frame is paper white. Every constant is the reference's
+     own; only the foreground page texture is replaced by our paper white. */
+  // cloud noise calibrated to the reference /noise.jpg (mean 127, stdev 40):
+  // five wrapped value-noise octaves, then a histogram stretch so the ring
+  // boundary gets the same soft organic lumps instead of uniform jitter
+  const finaleNoiseN = 256;
+  const finaleNoiseData = new Uint8Array(finaleNoiseN * finaleNoiseN * 4);
+  {
+    const finaleRand = mulberry32(20261107);
+    const freqs = [4, 8, 16, 32, 64];
+    const lattices = freqs.map((freq) => {
+      const grid = new Float32Array(freq * freq);
+      for (let i = 0; i < grid.length; i++) grid[i] = finaleRand();
+      return grid;
+    });
+    const fade = (x: number) => x * x * (3 - 2 * x);
+    const sampleLayer = (grid: Float32Array, freq: number, x: number, y: number) => {
+      const gx = (x / finaleNoiseN) * freq;
+      const gy = (y / finaleNoiseN) * freq;
+      const x0 = Math.floor(gx);
+      const y0 = Math.floor(gy);
+      const fx = fade(gx - x0);
+      const fy = fade(gy - y0);
+      const xa = x0 % freq;
+      const xb = (x0 + 1) % freq;
+      const ya = y0 % freq;
+      const yb = (y0 + 1) % freq;
+      const top = grid[ya * freq + xa] * (1 - fx) + grid[ya * freq + xb] * fx;
+      const bottom = grid[yb * freq + xa] * (1 - fx) + grid[yb * freq + xb] * fx;
+      return top * (1 - fy) + bottom * fy;
+    };
+    const raw = new Float32Array(finaleNoiseN * finaleNoiseN);
+    let sum = 0;
+    let sumSq = 0;
+    for (let y = 0; y < finaleNoiseN; y++) {
+      for (let x = 0; x < finaleNoiseN; x++) {
+        let value = 0;
+        let amp = 0.5;
+        let total = 0;
+        for (let o = 0; o < freqs.length; o++) {
+          value += sampleLayer(lattices[o], freqs[o], x, y) * amp;
+          total += amp;
+          amp *= 0.5;
+        }
+        value /= total;
+        raw[y * finaleNoiseN + x] = value;
+        sum += value;
+        sumSq += value * value;
+      }
+    }
+    const mean = sum / raw.length;
+    const variance = Math.max(1e-6, sumSq / raw.length - mean * mean);
+    const stretch = 40 / Math.sqrt(variance);
+    for (let i = 0; i < raw.length; i++) {
+      const value = Math.max(0, Math.min(255, Math.round(127.5 + (raw[i] - mean) * stretch)));
+      finaleNoiseData[i * 4] = value;
+      finaleNoiseData[i * 4 + 1] = value;
+      finaleNoiseData[i * 4 + 2] = value;
+      finaleNoiseData[i * 4 + 3] = 255;
+    }
+  }
+  const finaleNoise = new THREE.DataTexture(
+    finaleNoiseData,
+    finaleNoiseN,
+    finaleNoiseN,
+    THREE.RGBAFormat,
+  );
+  finaleNoise.wrapS = THREE.RepeatWrapping;
+  finaleNoise.wrapT = THREE.RepeatWrapping;
+  finaleNoise.minFilter = THREE.LinearFilter;
+  finaleNoise.magFilter = THREE.LinearFilter;
+  finaleNoise.needsUpdate = true;
 
-  const pearlGlowUniforms = {
-    uOpacity: { value: 0 },
-    uTime: { value: 0 },
+  const rtFinale = new THREE.WebGLRenderTarget(1, 1, {
+    type: THREE.HalfFloatType,
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    depthBuffer: true,
+    stencilBuffer: false,
+  });
+  const finaleUniforms = {
+    uScene: { value: rtFinale.texture as THREE.Texture },
+    uNoise: { value: finaleNoise as THREE.Texture },
+    uReveal: { value: 0 },
+    uResolution: { value: new THREE.Vector2(1, 1) },
+    uCenter: { value: new THREE.Vector2(0.5, 0.53) },
+    uWhite: { value: new THREE.Vector3(245 / 255, 239 / 255, 1) },
+    uNoiseStrength: { value: 0.2 },
+    uRingWidth: { value: 2 },
+    uRingSharpness: { value: 10 },
+    uRingGlow: { value: 1.8 },
+    uEdgeSoftness: { value: 0.05 },
   };
-  const pearlGlowMat = new THREE.ShaderMaterial({
-    uniforms: pearlGlowUniforms,
-    transparent: true,
+  const finaleMat = new THREE.ShaderMaterial({
+    uniforms: finaleUniforms,
+    depthTest: false,
     depthWrite: false,
-    depthTest: true,
-    blending: THREE.AdditiveBlending,
     vertexShader: `varying vec2 vUv;
-      void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      void main() {
+        vUv = uv;
+        gl_Position = vec4(position.xy, 0.0, 1.0);
+      }`,
     fragmentShader: `precision highp float;
-      varying vec2 vUv; uniform float uOpacity; uniform float uTime;
-      void main(){
-        float d = length(vUv - 0.5) * 2.0;
-        float core = exp(-pow(d / 0.10, 2.0));
-        float halo = exp(-d * 2.6) * 0.75;
-        float wide = exp(-d * 1.1) * 0.22;
-        float breathe = 0.92 + 0.08 * sin(uTime * 0.6);
-        // hard radial mask: the plane's edge must never show as a seam
-        float mask = 1.0 - smoothstep(0.55, 0.98, d);
-        vec3 col = mix(vec3(0.30, 0.58, 1.0), vec3(0.98, 0.99, 1.0), core);
-        gl_FragColor = vec4(col, (core + halo + wide) * uOpacity * breathe * mask);
+      uniform sampler2D uScene;
+      uniform sampler2D uNoise;
+      uniform float uReveal;
+      uniform vec2 uResolution;
+      uniform vec2 uCenter;
+      uniform vec3 uWhite;
+      uniform float uNoiseStrength;
+      uniform float uRingWidth;
+      uniform float uRingSharpness;
+      uniform float uRingGlow;
+      uniform float uEdgeSoftness;
+      varying vec2 vUv;
+
+      void main() {
+        if (uReveal <= 0.001) {
+          gl_FragColor = texture2D(uScene, vUv);
+          return;
+        }
+        if (uReveal >= 0.999) {
+          gl_FragColor = vec4(uWhite, 1.0);
+          return;
+        }
+
+        float t = uReveal;
+        vec2 uv = vUv;
+        float aspect = uResolution.x / uResolution.y;
+        vec2 coord = (uv - uCenter) * vec2(aspect, 1.0);
+        float distToCenter = length(coord);
+
+        vec2 noiseUv = (uv - 0.5) * 0.8 + 0.5;
+        float noiseVal = texture2D(uNoise, noiseUv).r - 0.5;
+        float noiseMask = smoothstep(0.0, 0.4, t) * smoothstep(1.0, 0.6, t);
+        float distortion = noiseVal * uNoiseStrength * noiseMask;
+
+        vec2 farCorner = max(uCenter, vec2(1.0) - uCenter) * vec2(aspect, 1.0);
+        float maxRadius = length(farCorner) * 1.3;
+        float radius = maxRadius * t;
+        float circle = radius - distToCenter + distortion;
+
+        float ringEnvelope = pow(1.0 - t, 0.6);
+        float primaryRing = pow(clamp(1.0 - abs(circle * uRingWidth), 0.0, 1.0), uRingSharpness);
+        float secondaryRing = pow(clamp(1.0 - abs((circle - 0.06) * uRingWidth * 0.5), 0.0, 1.0), uRingSharpness * 0.5) * 0.3;
+        float ringFactor = ringEnvelope * (primaryRing + secondaryRing);
+
+        float revealMask = smoothstep(-uEdgeSoftness, uEdgeSoftness, circle);
+        float edgeFade = smoothstep(0.0, 0.08, t);
+        float effectiveReveal = revealMask * edgeFade;
+        float glowIntensity = ringFactor * uRingGlow;
+
+        // reference outro branch: the scene composited raw (no lens/CA/
+        // desaturation), a foreground page taking over inside the ring. The
+        // fill fades in behind the ring so the onset reads as a hollow donut
+        // over the scene, exactly like the recording, then whites out
+        float fill = smoothstep(0.02, 0.42, t);
+        vec3 bg = texture2D(uScene, uv).rgb;
+        vec3 rgb = mix(bg, uWhite, effectiveReveal * fill);
+        rgb = mix(rgb, vec3(1.0), glowIntensity * 0.5 * edgeFade);
+        gl_FragColor = vec4(rgb, 1.0);
       }`,
   });
-  const pearlGlow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), pearlGlowMat);
-  pearlGlow.position.copy(PEARL_POS);
-  pearlGlow.renderOrder = 1;
-  pearlGlow.visible = false;
-  scene.add(pearlGlow);
+  const finaleGeo = new THREE.PlaneGeometry(2, 2);
+  const finaleScene = new THREE.Scene();
+  const finaleCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  finaleScene.add(new THREE.Mesh(finaleGeo, finaleMat));
+  let revealCenterLocked = false;
 
   /* shapes: each sampled at its own proportions, then normalized so every
      scene occupies the same frame footprint (the reference orb scale) */
@@ -1288,7 +1378,6 @@ export function createHeroScene(
   let prevHeartbeatFired = false;
   let suppressUntil = 0;
   let springScale = 1;
-  let revealS = 0;
   let elapsed = 0;
   let last = performance.now();
   let raf = 0;
@@ -1498,20 +1587,19 @@ export function createHeroScene(
       oy,
       radius * Math.cos(angle),
     );
-    // finale fly-through: in the last scene the camera dives from orbit into the
-    // torus hole and passes through it (ring walls sweep the frame edges), then
-    // the white flash hands off to the content sections
-    const FLY_START = 0.86;
+    // finale fly-in: the camera converges onto the hole axis and parks just in
+    // front of the torus plane so the ring reveal opens while the torus still
+    // frames the viewport (the reference never crosses the plane on screen)
+    const FLY_START = 0.88;
+    const FLY_END = 0.94;
     let flyT = 0;
     if (p > FLY_START) {
-      flyT = easeSmooth(Math.min(1, (p - FLY_START) / (1 - FLY_START)));
-      // converge onto the hole axis (torus faces +Z) and pass through along Z
-      const approach = new THREE.Vector3(
-        points.position.x,
-        points.position.y,
-        radius * Math.cos(angle) * (1 - flyT) - flyT * 5.5,
+      flyT = easeSmooth(Math.min(1, (p - FLY_START) / (FLY_END - FLY_START)));
+      camera.position.set(
+        points.position.x + radius * Math.sin(angle) * (1 - flyT),
+        oy * (1 - flyT) + points.position.y * flyT,
+        radius * Math.cos(angle) * (1 - flyT) + 5.0 * flyT,
       );
-      camera.position.lerp(approach, flyT);
     }
     // per-station mark footprint; the finale returns it to neutral for the dive
     const wide = camera.aspect < 0.9 ? 0 : 1;
@@ -1529,7 +1617,7 @@ export function createHeroScene(
     const f = t - seg;
     const a = stops[seg];
     const b = stops[seg + 1];
-    const lz = points.position.z + a[2] + (b[2] - a[2]) * f - flyT * 26;
+    const lz = points.position.z + a[2] + (b[2] - a[2]) * f;
     // composition: hold the mark in the frame gap left by the statement. shift
     // along the camera's own right vector so it stays put through the orbit
     const stageX = wide ? stationAt(STAGE_X, p) : 0;
@@ -1569,11 +1657,12 @@ export function createHeroScene(
     const rotF = rotT - rotSeg;
     let ry =
       SHAPE_ROTATIONS[rotSeg] + (SHAPE_ROTATIONS[rotSeg + 1] - SHAPE_ROTATIONS[rotSeg]) * rotF;
-    // last scene: rotate the ring to face the camera (azimuth compensation), easing
-    // to 0 as the orbit comes full circle — donut reads perfectly frontal in the dive
-    if (p > 0.87) {
-      const blend = Math.min(1, (p - 0.87) / 0.05);
-      const frontal = -(Math.PI * 2 - angle);
+    // last scene: rotate the ring to face the camera (azimuth compensation) so
+    // it reads frontal through the centred hold; once the camera parks on the
+    // hole axis the target unwinds to zero
+    if (p > 0.76) {
+      const blend = Math.min(1, (p - 0.76) / 0.06);
+      const frontal = -(Math.PI * 2 - angle) * (1 - flyT);
       ry = ry * (1 - blend) + frontal * blend;
     }
     // scroll-driven only — a time-based drift leaves the shape at a different
@@ -1582,32 +1671,20 @@ export function createHeroScene(
     groundUniforms.uCam.value.set(camera.position.x, camera.position.z);
     groundUniforms.uMark.value.set(points.position.x, points.position.z);
 
-    // finale reveal: passing through the ring slowly opens the azure world and
-    // brings up the pearl. Scroll drives the target, a short frame-rate lerp
-    // keeps the light change soft even on coarse wheel steps.
+    // finale ring reveal: a white ring opens from the torus hole as the camera
+    // crosses its plane, until the whole frame is paper white. The centre is the
+    // torus's projected position, frozen at onset so the ring never chases the
+    // camera after it passes through.
     const fp = progressRef.value;
-    const revealTarget = easeSmooth(Math.min(1, Math.max(0, (fp - 0.87) / 0.11)));
-    revealS += (revealTarget - revealS) * Math.min(1, delta * 3.2);
-    domeUniforms.uReveal.value = revealS;
-    groundUniforms.uReveal.value = revealS;
-
-    const pearlIn = easeSmooth(Math.min(1, Math.max(0, (fp - 0.905) / 0.065)));
-    const pearlGrow = 0.55 + 0.65 * easeSmooth(Math.min(1, Math.max(0, (fp - 0.9) / 0.1)));
-    pearl.visible = pearlIn > 0.001;
-    pearlGlow.visible = pearl.visible;
-    pearlUniforms.uOpacity.value = pearlIn * 0.96;
-    pearlUniforms.uTime.value = elapsed;
-    pearlGlowUniforms.uTime.value = elapsed;
-    pearlGlowUniforms.uOpacity.value = pearlIn * (0.55 + 0.45 * revealS) * 0.9;
-    pearl.position.set(
-      points.position.x,
-      MARK_Y + Math.sin(elapsed * 0.35) * 0.22,
-      PEARL_POS.z,
-    );
-    pearl.scale.setScalar(pearlGrow * (1 + 0.015 * Math.sin(elapsed * 0.9)));
-    pearlGlow.position.copy(pearl.position);
-    pearlGlow.quaternion.copy(camera.quaternion);
-    pearlGlow.scale.setScalar(9 + 5 * pearlIn);
+    const revealT = easeSmooth(Math.min(1, Math.max(0, (fp - 0.94) / 0.06)));
+    if (revealT > 0.0001 && !revealCenterLocked) {
+      camera.updateMatrixWorld();
+      const c = new THREE.Vector3(points.position.x, points.position.y, points.position.z).project(camera);
+      finaleUniforms.uCenter.value.set((c.x + 1) / 2, (c.y + 1) / 2);
+      revealCenterLocked = true;
+    } else if (revealT <= 0.0001) {
+      revealCenterLocked = false;
+    }
 
     // dust drift
     const dp = dustGeo.attributes.position as THREE.BufferAttribute;
@@ -1618,7 +1695,15 @@ export function createHeroScene(
     }
     dp.needsUpdate = true;
 
-    renderer.render(scene, camera);
+    if (revealT > 0.0001) {
+      renderer.setRenderTarget(rtFinale);
+      renderer.render(scene, camera);
+      renderer.setRenderTarget(null);
+      finaleUniforms.uReveal.value = revealT;
+      renderer.render(finaleScene, finaleCam);
+    } else {
+      renderer.render(scene, camera);
+    }
     raf = requestAnimationFrame(tick);
   };
 
@@ -1658,6 +1743,10 @@ export function createHeroScene(
       renderer.setSize(w, h, false);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
+      const bw = Math.max(1, Math.round(w * dpr));
+      const bh = Math.max(1, Math.round(h * dpr));
+      rtFinale.setSize(bw, bh);
+      finaleUniforms.uResolution.value.set(bw, bh);
       const cx = markX();
       points.position.x = cx;
       points.scale.setScalar(markScale());
@@ -1686,10 +1775,10 @@ export function createHeroScene(
       shootMat.dispose();
       planet.geometry.dispose();
       groundMat.dispose();
-      pearl.geometry.dispose();
-      pearlMat.dispose();
-      pearlGlow.geometry.dispose();
-      pearlGlowMat.dispose();
+      rtFinale.dispose();
+      finaleNoise.dispose();
+      finaleGeo.dispose();
+      finaleMat.dispose();
       dustGeo.dispose();
       (dust.material as THREE.Material).dispose();
       renderer.dispose();

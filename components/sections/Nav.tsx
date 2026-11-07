@@ -23,7 +23,10 @@ function useIstClock() {
 export default function Nav() {
   const time = useIstClock();
   return (
-    <header className="fixed inset-x-0 top-0 z-50">
+    <header
+      data-site-nav
+      className="fixed inset-x-0 top-0 z-50"
+    >
       <nav className="flex items-center justify-between px-6 py-5 md:px-12" aria-label="Main">
         <DecodeLink
           href="#hero"

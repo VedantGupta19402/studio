@@ -10,28 +10,30 @@ export default function Intro() {
 
   useEffect(() => {
     if (prefersReducedMotion()) return;
-    const { gsap, ScrollTrigger } = registerGsap();
+    const { gsap } = registerGsap();
     const el = ref.current!;
     const words = el.querySelectorAll("[data-word]");
-    gsap.fromTo(
-      words,
-      { color: "rgba(245,239,255,0.28)" },
-      {
-        color: "#F5EFFF",
-        stagger: 0.06,
-        ease: "none",
-        scrollTrigger: { trigger: el, start: "top 72%", end: "top 22%", scrub: true },
-      },
-    );
-    gsap.fromTo(
-      el.querySelectorAll("[data-rise]"),
-      { y: 48, opacity: 0 },
-      {
-        y: 0, opacity: 1, duration: 0.9, ease: "power3.out", stagger: 0.08,
-        scrollTrigger: { trigger: el, start: "top 70%" },
-      },
-    );
-    return () => { ScrollTrigger.getAll().forEach((t) => t.kill()); };
+    const ctx = gsap.context(() => {
+      gsap.fromTo(
+        words,
+        { color: "rgba(245,239,255,0.28)" },
+        {
+          color: "#F5EFFF",
+          stagger: 0.06,
+          ease: "none",
+          scrollTrigger: { trigger: el, start: "top 72%", end: "top 22%", scrub: true },
+        },
+      );
+      gsap.fromTo(
+        el.querySelectorAll("[data-rise]"),
+        { y: 48, opacity: 0 },
+        {
+          y: 0, opacity: 1, duration: 0.9, ease: "power3.out", stagger: 0.08,
+          scrollTrigger: { trigger: el, start: "top 70%" },
+        },
+      );
+    }, el);
+    return () => ctx.revert();
   }, []);
 
   return (

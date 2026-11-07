@@ -137,6 +137,7 @@ export default function HeroWorld() {
   const prevActiveRef = useRef(0);
   const [bursting, setBursting] = useState(false);
   const [finaleFade, setFinaleFade] = useState(false);
+
   useEffect(() => {
     // station handoff — reference timeline: outgoing slides 120×80 px away over
     // 1.0 s (sine.out), incoming starts 0.3 s later offset the other way and
@@ -196,13 +197,30 @@ export default function HeroWorld() {
     return () => clearTimeout(t);
   }, [active]);
   useEffect(() => {
-    // statement + CTAs fade during the finale dive (0.92 -> sticky end)
+    // statement + CTAs stay through the centred hold and the dive, then clear
+    // as the white ring opens. The paper veil and the nav hand off to About:
+    // the veil matches the canvas white, and the nav returns once About covers
     const onScroll = () => {
       const el = document.getElementById("hero");
       if (!el) return;
-      const range = el.offsetHeight - window.innerHeight;
+      const vh = window.innerHeight;
+      const range = el.offsetHeight - vh;
       const p = range > 0 ? window.scrollY / range : 0;
-      setFinaleFade(p > 0.92);
+      setFinaleFade(p > 0.94);
+      const heroEnd = el.offsetTop + el.offsetHeight - vh;
+      const atEnd = window.scrollY >= heroEnd - 1.5;
+      const intro = document.getElementById("about-intro");
+      const fade = intro
+        ? Math.min(1, Math.max(0, (vh - intro.getBoundingClientRect().top) / vh))
+        : 1;
+      const veilOpacity = atEnd ? 1 - fade : 0;
+      const navOpacity = atEnd ? fade : 1 - Math.min(1, Math.max(0, (p - 0.94) / 0.025));
+      // CSS vars survive React re-renders (the nav clock re-renders every
+      // second, and an inline style set from here would be wiped by it)
+      const root = document.documentElement;
+      root.style.setProperty("--veil-opacity", String(veilOpacity));
+      root.style.setProperty("--nav-opacity", String(navOpacity));
+      root.toggleAttribute("data-nav-off", navOpacity < 0.05);
     };
     window.addEventListener("scroll", onScroll, { passive: true });
     onScroll();
@@ -220,6 +238,7 @@ export default function HeroWorld() {
     const canvas = canvasRef.current!;
     const wrap = wrapRef.current!;
     let scene: HeroSceneHandle | null = null;
+    let heroTrigger: { kill: () => void } | null = null;
     let disposed = false;
 
     const boot = () => {
@@ -243,7 +262,7 @@ export default function HeroWorld() {
       if (!reduced && finePointer) window.addEventListener("pointermove", onPointer);
 
       if (!reduced) {
-        ScrollTrigger.create({
+        heroTrigger = ScrollTrigger.create({
           trigger: wrap,
           start: "top top",
           end: "bottom bottom",
@@ -252,8 +271,9 @@ export default function HeroWorld() {
             const delta = self.progress - lastProgRef.current;
             if (Math.abs(delta) > 1e-5) dirRef.current = delta > 0 ? 1 : -1;
             lastProgRef.current = self.progress;
-            // reference breakpoints: scenes are unequal spans [0.18, 0.4, 0.65, 0.87]
-            const BREAKS = [0.18, 0.4, 0.65, 0.87];
+            // reference breakpoints: the torus owns the last quarter so it can
+            // arrive, centre and hold before the dive [0.18, 0.4, 0.65, 0.76]
+            const BREAKS = [0.18, 0.4, 0.65, 0.76];
             let idx = 0;
             for (let i = BREAKS.length - 1; i >= 0; i--) {
               if (self.progress > BREAKS[i]) { idx = i + 1; break; }
@@ -275,6 +295,9 @@ export default function HeroWorld() {
     };
 
     const cleanupBoot = boot();
+    // the sections below mount before this dynamic chunk inserts the 620vh
+    // hero, so their triggers measured a short page — re-measure now
+    ScrollTrigger.refresh();
 
     return () => {
       disposed = true;
@@ -282,7 +305,7 @@ export default function HeroWorld() {
       scene?.dispose();
       sceneRef.current = null;
       stopLenis();
-      ScrollTrigger.getAll().forEach((t) => t.kill());
+      heroTrigger?.kill();
     };
   }, []);
 
@@ -403,7 +426,10 @@ export default function HeroWorld() {
         </div>
 
         {/* est strip */}
-        <div className="absolute bottom-6 right-6 z-10 hidden md:right-12 sm:block">
+        <div
+          className="absolute bottom-6 right-6 z-10 hidden md:right-12 sm:block"
+          style={{ opacity: finaleFade ? 0 : 1, transition: "opacity 500ms" }}
+        >
           <p className="mono-label text-[color:var(--muted)]">{SITE.est}</p>
         </div>
 
@@ -414,6 +440,11 @@ export default function HeroWorld() {
           linkable, running.
         </p>
       </div>
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 z-[60] bg-[color:var(--paper)]"
+        style={{ opacity: "var(--veil-opacity, 0)" }}
+      />
     </div>
   );
 }

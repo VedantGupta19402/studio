@@ -10,25 +10,27 @@ export default function Studio() {
 
   useEffect(() => {
     if (prefersReducedMotion()) return;
-    const { gsap, ScrollTrigger } = registerGsap();
+    const { gsap } = registerGsap();
     const el = ref.current!;
-    gsap.fromTo(
-      el.querySelectorAll("[data-statement]"),
-      { y: 64, opacity: 0 },
-      {
-        y: 0, opacity: 1, duration: 1.0, ease: "power3.out", stagger: 0.12,
-        scrollTrigger: { trigger: el, start: "top 70%" },
-      },
-    );
-    gsap.fromTo(
-      el.querySelectorAll("[data-pillar]"),
-      { y: 36, opacity: 0 },
-      {
-        y: 0, opacity: 1, duration: 0.8, ease: "power3.out", stagger: 0.1,
-        scrollTrigger: { trigger: el.querySelectorAll("[data-pillars]")[0], start: "top 78%" },
-      },
-    );
-    return () => { ScrollTrigger.getAll().forEach((t) => t.kill()); };
+    const ctx = gsap.context(() => {
+      gsap.fromTo(
+        el.querySelectorAll("[data-statement]"),
+        { y: 64, opacity: 0 },
+        {
+          y: 0, opacity: 1, duration: 1.0, ease: "power3.out", stagger: 0.12,
+          scrollTrigger: { trigger: el, start: "top 70%" },
+        },
+      );
+      gsap.fromTo(
+        el.querySelectorAll("[data-pillar]"),
+        { y: 36, opacity: 0 },
+        {
+          y: 0, opacity: 1, duration: 0.8, ease: "power3.out", stagger: 0.1,
+          scrollTrigger: { trigger: el.querySelectorAll("[data-pillars]")[0], start: "top 78%" },
+        },
+      );
+    }, el);
+    return () => ctx.revert();
   }, []);
 
   return (
