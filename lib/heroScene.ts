@@ -300,7 +300,7 @@ void main() {
     vec2 screenUV = clamp((clipPos.xy / clipPos.w) * 0.5 + 0.5, 0.001, 0.999);
     vec2 d = screenUV - uMouseUV;
     d.x *= uAspect;
-    interactMask = 1.0 - smoothstep(0.05, 0.12, length(d));
+    interactMask = 1.0 - smoothstep(0.025, 0.06, length(d));
   }
   vec2 fluidVelXY = vec2(uMouseVel.x * uAspect, uMouseVel.y) * 50.0 * uImpulseScale * interactMask;
   float rawLen = length(fluidVelXY);
@@ -378,7 +378,7 @@ void main() {
     vec2 screenUV = clamp((clipPos.xy / clipPos.w) * 0.5 + 0.5, 0.001, 0.999);
     vec2 d = screenUV - uMouseUV;
     d.x *= uAspect;
-    interactMask = 1.0 - smoothstep(0.05, 0.12, length(d));
+    interactMask = 1.0 - smoothstep(0.025, 0.06, length(d));
   }
   float impulseMag = length(uMouseVel) * 50.0 * uImpulseScale * interactMask;
   float proxGlow = min(impulseMag * 1.5, 0.8) * uInteractForce;
@@ -1073,7 +1073,7 @@ export function createHeroScene(
     uMouseUV: { value: new THREE.Vector2(0.5, 0.5) },
     uMouseVel: { value: new THREE.Vector2(0, 0) },
     uAspect: { value: 1 },
-    uImpulseScale: { value: 0.065 }, // unit-space sim: halved per owner feedback
+    uImpulseScale: { value: 0.2 }, // ratio of our smaller mark footprint to the reference's
     uMVP: { value: new THREE.Matrix4() },
     uCamRight: { value: new THREE.Vector3(1, 0, 0) },
     uCamUp: { value: new THREE.Vector3(0, 1, 0) },
@@ -1274,8 +1274,18 @@ export function createHeroScene(
   let raf = 0;
   const mouseUV = new THREE.Vector2(0.5, 0.5);
   const mouseVel = new THREE.Vector2(0, 0);
-  let pointerActive = false;
-  let pointerTimer: ReturnType<typeof setTimeout> | undefined;
+  const pointerNDC = new THREE.Vector2(0, 0);
+  const smoothNDC = new THREE.Vector2(0, 0);
+  let pointerSeeded = false;
+  let pointerIdle = 999;
+  let smoothedYaw = 0;
+  let smoothedPitch = 0;
+  const WORLD_UP = new THREE.Vector3(0, 1, 0);
+  const parallaxQ = new THREE.Quaternion();
+  const parallaxQ2 = new THREE.Quaternion();
+  const parallaxLook = new THREE.Vector3();
+  const parallaxView = new THREE.Vector3();
+  const parallaxRight = new THREE.Vector3();
   const interactRef = { value: 0 };
   const progressRef = { value: 0 };
 
@@ -1389,10 +1399,26 @@ export function createHeroScene(
     }
     groundUniforms.uPulse.value = pulseIntensity * 0.5;
 
-    mouseVel.multiplyScalar(0.86);
+    // pointer: reference updatePointer — 0.2/frame position lerp, velocity
+    // accumulated from the residual then decayed 0.6/frame; full force is held
+    // for 3 s after the last motion, then fades out over 1 s
+    const fStep = Math.min(Math.max(delta * 60, 0), 2);
+    if (!pointerSeeded) {
+      smoothNDC.copy(pointerNDC);
+      mouseVel.set(0, 0);
+      pointerSeeded = true;
+    } else {
+      const posK = 1 - Math.pow(0.8, fStep);
+      smoothNDC.x += (pointerNDC.x - smoothNDC.x) * posK;
+      smoothNDC.y += (pointerNDC.y - smoothNDC.y) * posK;
+      mouseVel.x += (pointerNDC.x - smoothNDC.x) * 0.5 * fStep;
+      mouseVel.y += (pointerNDC.y - smoothNDC.y) * 0.5 * fStep;
+      mouseVel.multiplyScalar(Math.pow(0.6, fStep));
+    }
+    pointerIdle = mouseVel.lengthSq() > 1e-8 ? 0 : pointerIdle + delta;
+    interactRef.value = pointerIdle < 3 ? 1 : Math.max(0, 1 - (pointerIdle - 3));
     simUniforms.uMouseVel.value.copy(mouseVel);
     simUniforms.uMouseUV.value.copy(mouseUV);
-    interactRef.value += ((pointerActive ? 1 : 0) - interactRef.value) * Math.min(1, delta * 6);
     simUniforms.uInteractForce.value = interactRef.value;
 
     camera.updateMatrixWorld();
@@ -1486,11 +1512,31 @@ export function createHeroScene(
     const compX = -compAmount * Math.cos(angle);
     const compZ = compAmount * Math.sin(angle);
     const compY = (camera.aspect < 0.9 ? -1.2 : -2.0) * (1 - flyT);
-    camera.lookAt(
-      points.position.x + compX,
-      points.position.y + compY,
-      lz + compZ,
-    );
+    const lookX = points.position.x + compX;
+    const lookY = points.position.y + compY;
+    const lookZ = lz + compZ;
+    camera.lookAt(lookX, lookY, lookZ);
+    // pointer parallax (reference composeCamera): the whole world rotates around
+    // the look-at point — 0.025 rad yaw, pitch *0.1, 0.08/frame lerp. Far layers
+    // therefore sway ~10-20 px while the HTML type stays put. Fades out through
+    // the finale dive so the fly-through stays on rails.
+    const parallaxWeight = 1 - Math.min(1, Math.max(0, (p - 0.85) / 0.05));
+    const rotK = 1 - Math.pow(0.92, Math.min(delta * 60, 3));
+    const targetYaw = pointerNDC.x * 0.025 * parallaxWeight;
+    const targetPitch = -pointerNDC.y * 0.025 * parallaxWeight;
+    smoothedYaw += (targetYaw - smoothedYaw) * rotK;
+    smoothedPitch += (targetPitch - smoothedPitch) * rotK;
+    parallaxLook.set(lookX, lookY, lookZ);
+    parallaxView.subVectors(parallaxLook, camera.position).normalize();
+    parallaxRight.crossVectors(parallaxView, WORLD_UP).normalize();
+    parallaxQ.setFromAxisAngle(WORLD_UP, smoothedYaw);
+    parallaxQ.multiply(parallaxQ2.setFromAxisAngle(parallaxView, -smoothedYaw));
+    parallaxQ.multiply(parallaxQ2.setFromAxisAngle(parallaxRight, smoothedPitch * 0.1));
+    // orbit the camera around the look-at by the inverse rotation, so the whole
+    // WebGL world (including the analytic limb) sways while the HTML type holds
+    parallaxQ.conjugate();
+    camera.position.sub(parallaxLook).applyQuaternion(parallaxQ).add(parallaxLook);
+    camera.quaternion.premultiply(parallaxQ);
     // per-shape group rotation (heart faces the camera at its orbit azimuth)
     const rotT = easeSmooth(p) * (SHAPE_ROTATIONS.length - 1);
     const rotSeg = Math.min(Math.floor(rotT), SHAPE_ROTATIONS.length - 2);
@@ -1576,15 +1622,11 @@ export function createHeroScene(
       progressRef.value = p;
     },
     setPointer(nx, ny) {
-      const ux = (nx + 1) / 2;
-      const uy = (ny + 1) / 2;
-      mouseVel.set((ux - mouseUV.x) * 60, (uy - mouseUV.y) * 60).clampLength(0, 3);
-      mouseUV.set(ux, uy);
-      pointerActive = true;
-      clearTimeout(pointerTimer);
-      pointerTimer = setTimeout(() => {
-        pointerActive = false;
-      }, 1600);
+      // reference frame: dent centre follows the raw pointer, while the impulse
+      // is driven by a smoothed pointer velocity (updatePointer in the tick)
+      pointerNDC.set(nx, ny);
+      mouseUV.set((nx + 1) / 2, (ny + 1) / 2);
+      pointerIdle = 0;
     },
     resize(w, h) {
       renderer.setSize(w, h, false);

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { NAV_LINKS, SITE } from "@/content/opera";
+import DecodeLink from "@/components/ui/DecodeLink";
 
 function useIstClock() {
   const [time, setTime] = useState<string | null>(null);
@@ -24,14 +25,19 @@ export default function Nav() {
   return (
     <header className="fixed inset-x-0 top-0 z-50">
       <nav className="flex items-center justify-between px-6 py-5 md:px-12" aria-label="Main">
-        <a href="#hero" className="display text-lg text-[color:var(--paper)]">
-          {SITE.wordmark}
-        </a>
+        <DecodeLink
+          href="#hero"
+          text={SITE.wordmark}
+          className="display text-lg text-[color:var(--paper)]"
+        />
         <div className="mono-label hidden gap-8 text-[color:var(--muted)] md:flex">
           {NAV_LINKS.map((l) => (
-            <a key={l.href} href={l.href} className="transition-colors hover:text-[color:var(--paper)]">
-              {l.label}
-            </a>
+            <DecodeLink
+              key={l.href}
+              href={l.href}
+              text={l.label}
+              className="transition-colors hover:text-[color:var(--paper)]"
+            />
           ))}
         </div>
         <div className="flex items-center gap-4">

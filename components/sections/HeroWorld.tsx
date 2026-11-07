@@ -140,12 +140,13 @@ export default function HeroWorld() {
       onResize();
       window.addEventListener("resize", onResize);
 
+      const finePointer = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
       const onPointer = (e: PointerEvent) => {
         const nx = (e.clientX / window.innerWidth) * 2 - 1;
         const ny = -((e.clientY / window.innerHeight) * 2 - 1);
-        scene?.setPointer(nx * 1.4, ny * 0.9);
+        scene?.setPointer(nx, ny);
       };
-      if (!reduced) window.addEventListener("pointermove", onPointer);
+      if (!reduced && finePointer) window.addEventListener("pointermove", onPointer);
 
       if (!reduced) {
         ScrollTrigger.create({
