@@ -6,7 +6,7 @@
 import * as THREE from "three";
 
 export type HeroSceneHandle = {
-  setScene: (idx: number) => void; // lock statement scene -> shape (burst + embers)
+  setScene: (idx: number, dir?: number) => void; // lock statement scene -> shape (burst + embers forward only)
   setProgress: (p: number) => void; // 0..1 journey (camera, Target 2)
   setPointer: (nx: number, ny: number) => void; // NDC -1..1
   resize: (w: number, h: number) => void;
@@ -1047,6 +1047,7 @@ export function createHeroScene(
     uRingWidth: { value: 2 },
     uRingSharpness: { value: 10 },
     uRingGlow: { value: 1.8 },
+    uRingColor: { value: new THREE.Vector3(181 / 255, 123 / 255, 1.0) },
     uEdgeSoftness: { value: 0.05 },
   };
   const finaleMat = new THREE.ShaderMaterial({
@@ -1069,6 +1070,7 @@ export function createHeroScene(
       uniform float uRingWidth;
       uniform float uRingSharpness;
       uniform float uRingGlow;
+      uniform vec3 uRingColor;
       uniform float uEdgeSoftness;
       varying vec2 vUv;
 
@@ -1115,7 +1117,7 @@ export function createHeroScene(
         float fill = smoothstep(0.02, 0.42, t);
         vec3 bg = texture2D(uScene, uv).rgb;
         vec3 rgb = mix(bg, uFill, effectiveReveal * fill);
-        rgb = mix(rgb, vec3(1.0), glowIntensity * 0.5 * edgeFade);
+        rgb = mix(rgb, uRingColor, glowIntensity * 0.5 * edgeFade);
         gl_FragColor = vec4(rgb, 1.0);
       }`,
   });
@@ -1720,13 +1722,15 @@ export function createHeroScene(
   }
 
   return {
-    setScene(idx) {
+    setScene(idx, dir = 1) {
       if (idx !== sceneIdx) {
         sceneIdx = idx;
         burst = 1;
         suppressUntil = elapsed + 1.1; // energyFiringSuppressed during transition
         simUniforms.textureTarget.value = targetTextures[idx];
-        spawnEmbers();
+        // the energy burst is a forward-transition event; replaying it on the
+        // way back up leaves a white ember halo hanging around the mark
+        if (dir > 0) spawnEmbers();
         springScale = 0.2; // softenRetarget: spring drops to 20%, tweens back
       }
     },

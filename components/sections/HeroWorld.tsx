@@ -276,8 +276,9 @@ export default function HeroWorld() {
             for (let i = BREAKS.length - 1; i >= 0; i--) {
               if (self.progress > BREAKS[i]) { idx = i + 1; break; }
             }
-            // spring-based morph: shape swap + burst; physics does the travel
-            scene?.setScene(idx);
+            // spring-based morph: shape swap + burst; physics does the travel.
+            // Direction gates the ember burst so reverse crossings stay clean.
+            scene?.setScene(idx, dirRef.current);
             scene?.setProgress(self.progress);
             if (idx !== activeRef.current) {
               activeRef.current = idx;
