@@ -51,7 +51,7 @@ function OrbCursor() {
 /** per-character noise-decode reveal (reference decodeProgress grammar):
  *  characters start as scramble glyphs and resolve left-to-right over ~750ms */
 const GLYPHS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ#$%&/=?*+<>@0123456789";
-function ScrambleText({ text, active }: { text: string; active: boolean }) {
+function ScrambleText({ text, active, delay = 0 }: { text: string; active: boolean; delay?: number }) {
   const [out, setOut] = useState(() => text);
   const rafRef = useRef(0);
   useEffect(() => {
@@ -59,7 +59,14 @@ function ScrambleText({ text, active }: { text: string; active: boolean }) {
       setOut(text);
       return;
     }
-    const start = performance.now();
+    // scramble immediately (the block is still off-screen during the handoff
+    // delay) so the first visible frame is never the resolved line
+    setOut(
+      Array.from(text, (c) =>
+        c === "\n" || c === " " ? c : GLYPHS[Math.floor(Math.random() * GLYPHS.length)],
+      ).join(""),
+    );
+    let start = 0;
     const DURATION = 750;
     const tick = (now: number) => {
       const t = Math.min(1, (now - start) / DURATION);
@@ -80,11 +87,43 @@ function ScrambleText({ text, active }: { text: string; active: boolean }) {
       if (t < 1) rafRef.current = requestAnimationFrame(tick);
       else setOut(text);
     };
-    rafRef.current = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafRef.current);
-  }, [active, text]);
+    const begin = () => {
+      start = performance.now();
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    const timer = setTimeout(begin, delay);
+    return () => {
+      clearTimeout(timer);
+      cancelAnimationFrame(rafRef.current);
+    };
+  }, [active, text, delay]);
   return <span className="statement-solid">{out}</span>;
 }
+
+/* scroll stations — the reference's five hero screens sit at different parts of
+   the frame (bottom, left, bottom, right, bottom) and hand off with a diagonal
+   slide. Our order: bottom → right → bottom → left → bottom. The alternates
+   unlock at the same aspect ratio where heroScene switches to its wide mark
+   framing, so portrait tablets keep the stacked bottom layout. Class names stay
+   literal so the Tailwind scanner sees them. */
+const SCENE_LAYOUT = [
+  "left-6 bottom-[22vh] max-w-[86vw] [@media(min-aspect-ratio:9/10)]:left-12 [@media(min-aspect-ratio:9/10)]:bottom-[16vh] [@media(min-aspect-ratio:9/10)]:max-w-[62vw]",
+  "left-6 bottom-[22vh] max-w-[86vw] [@media(min-aspect-ratio:9/10)]:left-auto [@media(min-aspect-ratio:9/10)]:right-12 [@media(min-aspect-ratio:9/10)]:top-[24vh] [@media(min-aspect-ratio:9/10)]:bottom-auto [@media(min-aspect-ratio:9/10)]:max-w-[40vw]",
+  "left-6 bottom-[22vh] max-w-[86vw] [@media(min-aspect-ratio:9/10)]:left-12 [@media(min-aspect-ratio:9/10)]:bottom-[14vh] [@media(min-aspect-ratio:9/10)]:max-w-[62vw]",
+  "left-6 bottom-[22vh] max-w-[86vw] [@media(min-aspect-ratio:9/10)]:left-12 [@media(min-aspect-ratio:9/10)]:top-[30vh] [@media(min-aspect-ratio:9/10)]:bottom-auto [@media(min-aspect-ratio:9/10)]:max-w-[48vw]",
+  "left-6 bottom-[22vh] max-w-[86vw] [@media(min-aspect-ratio:9/10)]:left-12 [@media(min-aspect-ratio:9/10)]:bottom-[14vh] [@media(min-aspect-ratio:9/10)]:max-w-[62vw]",
+] as const;
+const SCENE_CAPS_SIZE = [
+  "",
+  "[@media(min-aspect-ratio:9/10)]:text-[clamp(2.2rem,4.6vw,4.2rem)]",
+  "",
+  "",
+  "",
+] as const;
+/* reference transition constants (HeroScreenManager): 2.5s base, outgoing
+   0.4×, incoming delayed 0.12×, diagonal travel 120×80 px. */
+const SLIDE_X = 120;
+const SLIDE_Y = 80;
 
 export default function HeroWorld() {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -92,8 +131,63 @@ export default function HeroWorld() {
   const sceneRef = useRef<HeroSceneHandle | null>(null);
   const [active, setActive] = useState(0);
   const activeRef = useRef(0);
+  const blockRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const dirRef = useRef(1);
+  const lastProgRef = useRef(0);
+  const prevActiveRef = useRef(0);
   const [bursting, setBursting] = useState(false);
   const [finaleFade, setFinaleFade] = useState(false);
+  useEffect(() => {
+    // station handoff — reference timeline: outgoing slides 120×80 px away over
+    // 1.0 s (sine.out), incoming starts 0.3 s later offset the other way and
+    // settles over 1.25 s (power2.out). Direction follows the scroll.
+    const reduced = prefersReducedMotion();
+    const { gsap } = registerGsap();
+    const blocks = blockRefs.current.filter(Boolean) as HTMLDivElement[];
+    gsap.set(blocks, { opacity: 0 });
+    gsap.set(blocks[0], { opacity: 1 });
+    return () => gsap.killTweensOf(blocks);
+  }, []);
+  useEffect(() => {
+    const prev = prevActiveRef.current;
+    if (active === prev) return;
+    const { gsap } = registerGsap();
+    const reduced = prefersReducedMotion();
+    const dir = dirRef.current;
+    const outEl = blockRefs.current[prev];
+    const inEl = blockRefs.current[active];
+    if (inEl) {
+      gsap.killTweensOf(inEl);
+      if (reduced) {
+        gsap.set(inEl, { x: 0, y: 0, opacity: 1 });
+      } else {
+        gsap.set(inEl, { x: dir * SLIDE_X, y: dir * SLIDE_Y, opacity: 0 });
+        gsap.to(inEl, { x: 0, y: 0, duration: 1.25, delay: 0.3, ease: "power2.out" });
+        gsap.to(inEl, { opacity: 1, duration: 0.45, delay: 0.3, ease: "power2.out" });
+        const pill = inEl.querySelector(".scene-pill");
+        if (pill) {
+          gsap.fromTo(
+            pill,
+            { scale: 0.8, opacity: 0, transformOrigin: "left center" },
+            { scale: 1, opacity: 1, duration: 1.25, delay: 0.55, ease: "power2.out" },
+          );
+        }
+        const lead = inEl.querySelector(".scene-lead");
+        if (lead) {
+          gsap.fromTo(lead, { opacity: 0 }, { opacity: 1, duration: 0.6, delay: 0.45, ease: "none" });
+        }
+      }
+    }
+    if (outEl && outEl !== inEl) {
+      gsap.killTweensOf(outEl);
+      if (reduced) {
+        gsap.set(outEl, { x: 0, y: 0, opacity: 0 });
+      } else {
+        gsap.to(outEl, { x: -dir * SLIDE_X, y: -dir * SLIDE_Y, opacity: 0, duration: 1.0, ease: "sine.out" });
+      }
+    }
+    prevActiveRef.current = active;
+  }, [active]);
   useEffect(() => {
     // flash overlay tracks scene changes (covers the morph crossing)
     if (activeRef.current === 0) return;
@@ -155,6 +249,9 @@ export default function HeroWorld() {
           end: "bottom bottom",
           scrub: true,
           onUpdate: (self) => {
+            const delta = self.progress - lastProgRef.current;
+            if (Math.abs(delta) > 1e-5) dirRef.current = delta > 0 ? 1 : -1;
+            lastProgRef.current = self.progress;
             // reference breakpoints: scenes are unequal spans [0.18, 0.4, 0.65, 0.87]
             const BREAKS = [0.18, 0.4, 0.65, 0.87];
             let idx = 0;
@@ -215,7 +312,7 @@ export default function HeroWorld() {
 
         {/* chrome — kicker (scene 1 only) */}
         <div
-          className={`absolute bottom-[38vh] left-6 z-10 transition-opacity duration-500 md:left-12 ${
+          className={`absolute bottom-[41vh] left-6 z-10 transition-opacity duration-500 md:left-12 md:bottom-[38vh] ${
             active === 0 ? "opacity-100" : "opacity-0"
           }`}
         >
@@ -225,39 +322,42 @@ export default function HeroWorld() {
           </p>
         </div>
 
-        {/* statement stack — fades during the finale dive */}
+        {/* statement stations — each scene owns a fixed anchor in the frame
+            (bottom → right → bottom → left → bottom) and hands off with the
+            reference diagonal slide; fades during the finale dive */}
         <div
-          className="absolute bottom-[16vh] left-6 z-10 max-w-[86vw] transition-opacity duration-500 sm:bottom-[9vh] md:left-12 md:max-w-[62vw]"
-          style={{ opacity: finaleFade ? 0 : 1 }}
+          className="absolute inset-0 z-10"
+          style={{ opacity: finaleFade ? 0 : 1, transition: "opacity 500ms" }}
         >
           {HERO_SCENES.map((s, i) => {
             const isActive = i === active;
             return (
               <div
                 key={s.id}
+                ref={(el) => {
+                  blockRefs.current[i] = el;
+                }}
                 aria-hidden={!isActive}
-                className={`transition-all duration-500 ${
-                  isActive
-                    ? "opacity-100 translate-y-0"
-                    : "pointer-events-none absolute inset-x-0 bottom-0 opacity-0 translate-y-6"
-                }`}
+                className={`pointer-events-none absolute z-10 opacity-0 ${SCENE_LAYOUT[i]}`}
               >
                 {s.mono ? (
-                  <p className="mono-label mb-4 text-[color:var(--violet-2)]">{s.mono}</p>
+                  <p className="scene-pill mono-label mb-4 text-[color:var(--violet-2)]">
+                    {s.mono}
+                  </p>
                 ) : null}
                 {s.lead ? (
-                  <p className="display text-[clamp(1.4rem,3vw,2.6rem)] italic text-[color:var(--paper)]">
+                  <p className="scene-lead display text-[clamp(1.4rem,3vw,2.6rem)] italic text-[color:var(--paper)]">
                     {s.lead}
                   </p>
                 ) : null}
                 <h1
-                  className={`display mt-2 whitespace-pre-line text-[clamp(2.6rem,7.2vw,6.4rem)] uppercase text-[color:var(--paper)] ${
+                  className={`display mt-2 whitespace-pre-line text-[clamp(2.6rem,7.2vw,6.4rem)] uppercase text-[color:var(--paper)] ${SCENE_CAPS_SIZE[i]} ${
                     isActive ? "statement-live" : ""
                   }`}
                 >
                   {/* solid + wireframe layers for the glitch swap; decode on activation */}
                   <span className="relative inline-block">
-                    <ScrambleText text={s.caps} active={isActive} />
+                    <ScrambleText text={s.caps} active={isActive} delay={300} />
                     <span
                       aria-hidden="true"
                       className="statement-wire pointer-events-none absolute inset-0"
@@ -307,8 +407,9 @@ export default function HeroWorld() {
           <p className="mono-label text-[color:var(--muted)]">{SITE.est}</p>
         </div>
 
-        {/* subline under first statement */}
-        <p className={`mono-label absolute bottom-[26vh] left-6 z-10 hidden max-w-sm leading-relaxed transition-opacity duration-500 md:left-12 md:block ${active === 0 ? "opacity-100" : "opacity-0"}`} aria-hidden={active !== 0}>
+        {/* subline under the nav — scene 1 only, keeps the bottom-left
+            station clear for the statement */}
+        <p className={`mono-label absolute left-6 top-[14vh] z-10 hidden max-w-[22rem] leading-relaxed transition-opacity duration-500 md:left-12 md:block ${active === 0 ? "opacity-100" : "opacity-0"}`} aria-hidden={active !== 0}>
           {SITE.name} builds client products end-to-end — and ships its own. Live,
           linkable, running.
         </p>

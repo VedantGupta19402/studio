@@ -48,6 +48,26 @@ const SHAPE_BREAKPOINTS = [0.18, 0.4, 0.65, 0.87];
 const SHAPE_ROTATIONS = [0, 0, 0, -(77 * Math.PI) / 180, 0]; // heart faces camera at its orbit azimuth
 const easeSmooth = (x: number) => x * x * (3 - 2 * x);
 
+/* per-station composition: the mark counterweights the statement — text bottom
+   or left keeps it upper-right, text right sends it upper-left. [screen-right,
+   screen-up] in world units at the mark's depth, held per scene and eased
+   across each breakpoint so the scroll stays reversible. */
+const STAGE_X = [2.8, -10.5, 3.6, 12.0, 4.6];
+const STAGE_Y = [1.6, 0.6, 0.8, 0.6, 2.4];
+const STAGE_SCALES = [1, 0.85, 0.88, 0.72, 0.9];
+const STAGE_WINDOW = 0.035;
+function stationAt(values: number[], p: number): number {
+  let v = values[0];
+  for (let i = 0; i < SHAPE_BREAKPOINTS.length; i++) {
+    const b = SHAPE_BREAKPOINTS[i];
+    const t = easeSmooth(
+      Math.min(1, Math.max(0, (p - (b - STAGE_WINDOW)) / (STAGE_WINDOW * 2))),
+    );
+    v += (values[i + 1] - v) * t;
+  }
+  return v;
+}
+
 /* energy heartbeat (reference: BURST_SPEED 0.5, fire window 0.8-0.9, SPAWN_BATCH 1600,
    LIFETIME 2.3, pulse decay x0.05/s, centerGlowPulse = 1 + pulse * 0.3).
    Tuned down after the first pass: the reference pulse is a shimmer, not a
@@ -1473,10 +1493,6 @@ export function createHeroScene(
     // keep the mark at a steady frame footprint through the approach (reference
     // orb holds ~1/3 width) while the camera still gains depth from the limb
     const distComp = 1 - (1 - ORBIT_CLOSE_FACTOR) * dip;
-    points.scale.setScalar(markScale() * distComp);
-    embers.scale.setScalar(markScale() * distComp);
-    renderUniforms.size.value = markPointSize() * distComp;
-    emberUniforms.size.value = markPointSize() * 0.5 * distComp;
     camera.position.set(
       points.position.x + radius * Math.sin(angle),
       oy,
@@ -1497,6 +1513,14 @@ export function createHeroScene(
       );
       camera.position.lerp(approach, flyT);
     }
+    // per-station mark footprint; the finale returns it to neutral for the dive
+    const wide = camera.aspect < 0.9 ? 0 : 1;
+    const stageScale = wide ? stationAt(STAGE_SCALES, p) : 1;
+    const stageS = stageScale * (1 - flyT) + flyT;
+    points.scale.setScalar(markScale() * distComp * stageS);
+    embers.scale.setScalar(markScale() * distComp * stageS);
+    renderUniforms.size.value = markPointSize() * distComp;
+    emberUniforms.size.value = markPointSize() * 0.5 * distComp;
     // lookAt: particles anchor + per-scene offsets (smoothstepped between stops);
     // during the fly-through the view turns forward through the hole (never looks back)
     const stops = LOOKAT_OFFSETS;
@@ -1506,12 +1530,14 @@ export function createHeroScene(
     const a = stops[seg];
     const b = stops[seg + 1];
     const lz = points.position.z + a[2] + (b[2] - a[2]) * f - flyT * 26;
-    // composition: hold the mark right of the headline and above the limb.
-    // shift along the camera's own right vector so it stays put through the orbit
-    const compAmount = (camera.aspect < 0.9 ? 0 : 2.8) * (1 - flyT);
+    // composition: hold the mark in the frame gap left by the statement. shift
+    // along the camera's own right vector so it stays put through the orbit
+    const stageX = wide ? stationAt(STAGE_X, p) : 0;
+    const stageY = wide ? stationAt(STAGE_Y, p) : 1.2;
+    const compAmount = stageX * (1 - flyT);
     const compX = -compAmount * Math.cos(angle);
     const compZ = compAmount * Math.sin(angle);
-    const compY = (camera.aspect < 0.9 ? -1.2 : -2.0) * (1 - flyT);
+    const compY = -stageY * (1 - flyT);
     const lookX = points.position.x + compX;
     const lookY = points.position.y + compY;
     const lookZ = lz + compZ;
