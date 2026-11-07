@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { registerGsap, prefersReducedMotion } from "@/lib/gsap";
 import { initLenis } from "@/lib/lenis";
 import { createHeroScene, type HeroSceneHandle } from "@/lib/heroScene";
+import { HERO_VH, journeyProgress } from "@/lib/journey";
 import { HERO_SCENES, HERO_CTA, SITE } from "@/content/opera";
 
 // progress windows per scene (equal fifths, overlap-free swaps)
@@ -136,7 +137,6 @@ export default function HeroWorld() {
   const lastProgRef = useRef(0);
   const prevActiveRef = useRef(0);
   const [bursting, setBursting] = useState(false);
-  const [finaleFade, setFinaleFade] = useState(false);
 
   useEffect(() => {
     // station handoff — reference timeline: outgoing slides 120×80 px away over
@@ -198,25 +198,33 @@ export default function HeroWorld() {
   }, [active]);
   useEffect(() => {
     // statement + CTAs stay through the centred hold and the dive, then clear
-    // as the ring opens. The nav dips out of the dive and returns as the About
-    // page materialises inside the reveal.
+    // as the ring opens. The fade is scrubbed, not a class toggle, so it stays
+    // locked to the same journey progress as the canvas. The nav dips out of
+    // the dive and returns as the About materialises inside the reveal.
+    const reduced = prefersReducedMotion();
     const smoothstep = (v: number, a: number, b: number) => {
       const t = Math.min(1, Math.max(0, (v - a) / (b - a)));
       return t * t * (3 - 2 * t);
     };
+    const root = document.documentElement;
     const onScroll = () => {
       const el = document.getElementById("hero");
       if (!el) return;
-      const vh = window.innerHeight;
-      const range = el.offsetHeight - vh;
-      const p = range > 0 ? window.scrollY / range : 0;
-      setFinaleFade(p > 0.94);
-      const navOut = smoothstep(p, 0.94, 0.965);
-      const navBack = smoothstep(p, 0.97, 0.99);
+      const range = el.offsetHeight - window.innerHeight;
+      const raw = range > 0 ? window.scrollY / range : 0;
+      if (reduced) {
+        root.style.setProperty("--chrome-fade", "1");
+        root.style.setProperty("--nav-opacity", "1");
+        root.removeAttribute("data-nav-off");
+        return;
+      }
+      const q = journeyProgress(raw);
+      root.style.setProperty("--chrome-fade", String(1 - smoothstep(q, 0.885, 0.93)));
+      const navOut = smoothstep(q, 0.94, 0.965);
+      const navBack = smoothstep(q, 0.97, 0.99);
       const navOpacity = Math.max(1 - navOut, navBack);
       // CSS vars survive React re-renders (the nav clock re-renders every
       // second, and an inline style set from here would be wiped by it)
-      const root = document.documentElement;
       root.style.setProperty("--nav-opacity", String(navOpacity));
       root.toggleAttribute("data-nav-off", navOpacity < 0.05);
     };
@@ -269,17 +277,20 @@ export default function HeroWorld() {
             const delta = self.progress - lastProgRef.current;
             if (Math.abs(delta) > 1e-5) dirRef.current = delta > 0 ? 1 : -1;
             lastProgRef.current = self.progress;
+            // the first four stations keep their old scroll distances; the
+            // finale stretches across the extra hero height (lib/journey.ts)
+            const q = journeyProgress(self.progress);
             // reference breakpoints: the torus owns the last quarter so it can
             // arrive, centre and hold before the dive [0.18, 0.4, 0.65, 0.76]
             const BREAKS = [0.18, 0.4, 0.65, 0.76];
             let idx = 0;
             for (let i = BREAKS.length - 1; i >= 0; i--) {
-              if (self.progress > BREAKS[i]) { idx = i + 1; break; }
+              if (q > BREAKS[i]) { idx = i + 1; break; }
             }
             // spring-based morph: shape swap + burst; physics does the travel.
             // Direction gates the ember burst so reverse crossings stay clean.
             scene?.setScene(idx, dirRef.current);
-            scene?.setProgress(self.progress);
+            scene?.setProgress(q);
             if (idx !== activeRef.current) {
               activeRef.current = idx;
               setActive(idx);
@@ -294,8 +305,8 @@ export default function HeroWorld() {
     };
 
     const cleanupBoot = boot();
-    // the sections below mount before this dynamic chunk inserts the 620vh
-    // hero, so their triggers measured a short page — re-measure now
+    // the sections below mount before this dynamic chunk inserts the hero,
+    // so their triggers measured a short page — re-measure now
     ScrollTrigger.refresh();
 
     return () => {
@@ -311,7 +322,7 @@ export default function HeroWorld() {
   const scene = HERO_SCENES[active];
 
   return (
-    <div ref={wrapRef} id="hero" className="relative h-[620vh]">
+    <div ref={wrapRef} id="hero" className="relative" style={{ height: `${HERO_VH}vh` }}>
       <OrbCursor />
       <div className="sticky top-0 h-screen overflow-hidden">
         <canvas
@@ -349,7 +360,7 @@ export default function HeroWorld() {
             reference diagonal slide; fades during the finale dive */}
         <div
           className="absolute inset-0 z-10"
-          style={{ opacity: finaleFade ? 0 : 1, transition: "opacity 500ms" }}
+          style={{ opacity: "var(--chrome-fade, 1)" }}
         >
           {HERO_SCENES.map((s, i) => {
             const isActive = i === active;
@@ -395,8 +406,8 @@ export default function HeroWorld() {
 
         {/* CTAs — fade during the finale dive */}
         <div
-          className="absolute bottom-[4vh] left-6 right-6 z-10 flex flex-col gap-3 transition-opacity duration-500 sm:left-12 sm:right-auto sm:flex-row md:left-12"
-          style={{ opacity: finaleFade ? 0 : 1 }}
+          className="absolute bottom-[4vh] left-6 right-6 z-10 flex flex-col gap-3 sm:left-12 sm:right-auto sm:flex-row md:left-12"
+          style={{ opacity: "var(--chrome-fade, 1)" }}
         >
           {HERO_CTA.map((c) => (
             <a
@@ -415,8 +426,8 @@ export default function HeroWorld() {
 
         {/* scroll cue */}
         <div
-          className="absolute bottom-0 left-1/2 z-10 hidden -translate-x-1/2 transition-opacity duration-500 sm:block"
-          style={{ opacity: finaleFade ? 0 : 1 }}
+          className="absolute bottom-0 left-1/2 z-10 hidden -translate-x-1/2 sm:block"
+          style={{ opacity: "var(--chrome-fade, 1)" }}
         >
           <div className="flex flex-col items-center gap-2 pb-4">
             <span className="mono-label text-[color:var(--muted)]">Scroll</span>
@@ -427,7 +438,7 @@ export default function HeroWorld() {
         {/* est strip */}
         <div
           className="absolute bottom-6 right-6 z-10 hidden md:right-12 sm:block"
-          style={{ opacity: finaleFade ? 0 : 1, transition: "opacity 500ms" }}
+          style={{ opacity: "var(--chrome-fade, 1)" }}
         >
           <p className="mono-label text-[color:var(--muted)]">{SITE.est}</p>
         </div>

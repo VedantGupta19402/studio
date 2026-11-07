@@ -1457,6 +1457,7 @@ export function createHeroScene(
   };
 
   const reduced = opts.reducedMotion ?? false;
+  let finaleWarmed = false;
 
   const tick = () => {
     const now = performance.now();
@@ -1674,12 +1675,13 @@ export function createHeroScene(
     groundUniforms.uCam.value.set(camera.position.x, camera.position.z);
     groundUniforms.uMark.value.set(points.position.x, points.position.z);
 
-    // finale ring reveal: a white ring opens from the torus hole as the camera
-    // crosses its plane, until the whole frame is paper white. The centre is the
+    // finale ring reveal: a violet ring opens from the torus hole as the camera
+    // crosses its plane, until the ink field fills the frame. The centre is the
     // torus's projected position, frozen at onset so the ring never chases the
-    // camera after it passes through.
+    // camera after it passes through. `fp` is journey progress, so the reveal
+    // window maps to its own runway (100vh of scroll) in lib/journey.ts.
     const fp = progressRef.value;
-    const revealT = easeSmooth(Math.min(1, Math.max(0, (fp - 0.94) / 0.06)));
+    const revealT = easeSmooth(Math.min(1, Math.max(0, (fp - 0.94) / 0.05)));
     if (revealT > 0.0001 && !revealCenterLocked) {
       camera.updateMatrixWorld();
       const c = new THREE.Vector3(points.position.x, points.position.y, points.position.z).project(camera);
@@ -1707,6 +1709,21 @@ export function createHeroScene(
     } else {
       renderer.render(scene, camera);
     }
+
+    // the ring's first frame would otherwise allocate the scene target and
+    // compile every scene program for its linear output mid-dive; run one
+    // full finale pass while the intro idles (uReveal 0 passes the scene through)
+    if (!finaleWarmed && elapsed > 1.2 && revealT <= 0.0001) {
+      finaleWarmed = true;
+      renderer.setRenderTarget(rtFinale);
+      renderer.render(scene, camera);
+      renderer.setRenderTarget(null);
+      finaleUniforms.uReveal.value = 0;
+      renderer.render(finaleScene, finaleCam);
+      // leave the presented frame on the normal path, not the warmup passthrough
+      renderer.render(scene, camera);
+    }
+
     raf = requestAnimationFrame(tick);
   };
 

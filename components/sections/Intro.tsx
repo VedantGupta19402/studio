@@ -28,8 +28,10 @@ export default function Intro() {
       const tl = gsap.timeline({
         scrollTrigger: {
           trigger: el,
-          start: "top 12%",
-          end: "top -30%",
+          // the page starts lighting as the ring leaves the frame and finishes
+          // while the statement is still on screen: 51vh of scroll
+          start: "top 45%",
+          end: "top -6%",
           scrub: true,
           onUpdate: (self) => {
             el.inert = self.progress <= 0.001;
@@ -39,10 +41,10 @@ export default function Intro() {
           },
         },
       });
-      tl.to(pill, { y: 0, opacity: 1, duration: 0.2, ease: "power2.out" }, 0)
-        .to(services, { y: 0, opacity: 1, duration: 0.22, ease: "power2.out" }, 0.06)
-        .to(words, { y: 0, opacity: 1, duration: 0.18, ease: "power2.out", stagger: 0.003 }, 0.03)
-        .to(words, { color: LIT, duration: 0.34, ease: "none", stagger: 0.006 }, 0.08);
+      tl.to(pill, { y: 0, opacity: 1, duration: 0.18, ease: "power2.out" }, 0)
+        .to(services, { y: 0, opacity: 1, duration: 0.22, ease: "power2.out" }, 0.08)
+        .to(words, { y: 0, opacity: 1, duration: 0.22, ease: "power2.out", stagger: 0.01 }, 0.04)
+        .to(words, { color: LIT, duration: 0.4, ease: "none", stagger: 0.012 }, 0.1);
     }, el);
     return () => {
       el.inert = false;
