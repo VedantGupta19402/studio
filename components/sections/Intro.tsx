@@ -1,9 +1,13 @@
 "use client";
-// Document section after the world — statement with word-by-word violet highlight (scrub),
-// services list right. Emotion "HomeMainContent" grammar, Opera copy.
+// The About page, revealed inside the finale: the section is pulled up over the
+// hero's last viewport so it appears as the ring opens onto space ink, then the
+// statement lights word by word as the page settles (reference grammar).
 import { useEffect, useRef } from "react";
 import { registerGsap, prefersReducedMotion } from "@/lib/gsap";
 import { INTRO } from "@/content/opera";
+
+const DIM = "rgba(245,239,255,0.28)";
+const LIT = "#F5EFFF";
 
 export default function Intro() {
   const ref = useRef<HTMLElement>(null);
@@ -12,35 +16,49 @@ export default function Intro() {
     if (prefersReducedMotion()) return;
     const { gsap } = registerGsap();
     const el = ref.current!;
+    const pill = el.querySelector<HTMLElement>("[data-reveal='pill']");
+    const services = el.querySelector<HTMLElement>("[data-reveal='services']");
     const words = el.querySelectorAll("[data-word]");
+    // while the hero is still pinned the section sits over the canvas but is
+    // invisible — keep it out of the pointer and tab order until it reveals
+    el.inert = true;
     const ctx = gsap.context(() => {
-      gsap.fromTo(
-        words,
-        { color: "rgba(245,239,255,0.28)" },
-        {
-          color: "#F5EFFF",
-          stagger: 0.06,
-          ease: "none",
-          scrollTrigger: { trigger: el, start: "top 72%", end: "top 22%", scrub: true },
+      gsap.set([pill, services], { y: 34, opacity: 0 });
+      gsap.set(words, { y: 22, opacity: 0, color: DIM });
+      const tl = gsap.timeline({
+        scrollTrigger: {
+          trigger: el,
+          start: "top 12%",
+          end: "top -30%",
+          scrub: true,
+          onUpdate: (self) => {
+            el.inert = self.progress <= 0.001;
+          },
+          onLeaveBack: () => {
+            el.inert = true;
+          },
         },
-      );
-      gsap.fromTo(
-        el.querySelectorAll("[data-rise]"),
-        { y: 48, opacity: 0 },
-        {
-          y: 0, opacity: 1, duration: 0.9, ease: "power3.out", stagger: 0.08,
-          scrollTrigger: { trigger: el, start: "top 70%" },
-        },
-      );
+      });
+      tl.to(pill, { y: 0, opacity: 1, duration: 0.2, ease: "power2.out" }, 0)
+        .to(services, { y: 0, opacity: 1, duration: 0.22, ease: "power2.out" }, 0.06)
+        .to(words, { y: 0, opacity: 1, duration: 0.18, ease: "power2.out", stagger: 0.003 }, 0.03)
+        .to(words, { color: LIT, duration: 0.34, ease: "none", stagger: 0.006 }, 0.08);
     }, el);
-    return () => ctx.revert();
+    return () => {
+      el.inert = false;
+      ctx.revert();
+    };
   }, []);
 
   return (
-    <section ref={ref} id="about-intro" className="hairline-t bg-[color:var(--ink)] px-6 py-32 md:px-12 md:py-44">
+    <section
+      ref={ref}
+      id="about-intro"
+      className="relative z-30 -mt-[100vh] min-h-screen px-6 py-32 md:px-12 md:py-44 [@media(prefers-reduced-motion:reduce)]:mt-0 [@media(prefers-reduced-motion:reduce)]:bg-[color:var(--ink)]"
+    >
       <div className="mx-auto grid max-w-7xl gap-16 md:grid-cols-[1.4fr_1fr]">
         <div>
-          <p data-rise className="mono-label mb-8 inline-block rounded-full border border-[color:var(--hairline)] px-4 py-2 text-[color:var(--violet-2)]">
+          <p data-reveal="pill" className="mono-label mb-8 inline-block rounded-full border border-[color:var(--hairline)] px-4 py-2 text-[color:var(--violet-2)]">
             {INTRO.kicker}
           </p>
           <p className="display text-[clamp(1.7rem,3.4vw,3.1rem)] leading-[1.15] text-[color:var(--paper)]">
@@ -51,7 +69,7 @@ export default function Intro() {
             ))}
           </p>
         </div>
-        <div data-rise>
+        <div data-reveal="services">
           <p className="mono-label mb-6 text-[color:var(--muted)]">{INTRO.servicesLabel}</p>
           <ul className="space-y-0">
             {INTRO.services.map((s) => (

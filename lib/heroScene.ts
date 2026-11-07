@@ -954,9 +954,10 @@ export function createHeroScene(
   scene.add(planet);
 
   /* ---------- finale ring reveal (reference tS / Ore shader, ported) ----------
-     The camera dives through the held torus and a thick white ring opens from
-     its hole until the frame is paper white. Every constant is the reference's
-     own; only the foreground page texture is replaced by our paper white. */
+     The camera dives through the held torus and a thick glowing ring opens from
+     its hole until the frame is filled with the site's space ink. Every
+     constant is the reference's own; their page texture is replaced by the ink
+     the About page itself sits on, so the reveal and the page merge. */
   // cloud noise calibrated to the reference /noise.jpg (mean 127, stdev 40):
   // five wrapped value-noise octaves, then a histogram stretch so the ring
   // boundary gets the same soft organic lumps instead of uniform jitter
@@ -1041,7 +1042,7 @@ export function createHeroScene(
     uReveal: { value: 0 },
     uResolution: { value: new THREE.Vector2(1, 1) },
     uCenter: { value: new THREE.Vector2(0.5, 0.53) },
-    uWhite: { value: new THREE.Vector3(245 / 255, 239 / 255, 1) },
+    uFill: { value: new THREE.Vector3(15 / 255, 13 / 255, 26 / 255) },
     uNoiseStrength: { value: 0.2 },
     uRingWidth: { value: 2 },
     uRingSharpness: { value: 10 },
@@ -1063,7 +1064,7 @@ export function createHeroScene(
       uniform float uReveal;
       uniform vec2 uResolution;
       uniform vec2 uCenter;
-      uniform vec3 uWhite;
+      uniform vec3 uFill;
       uniform float uNoiseStrength;
       uniform float uRingWidth;
       uniform float uRingSharpness;
@@ -1077,7 +1078,7 @@ export function createHeroScene(
           return;
         }
         if (uReveal >= 0.999) {
-          gl_FragColor = vec4(uWhite, 1.0);
+          gl_FragColor = vec4(uFill, 1.0);
           return;
         }
 
@@ -1110,10 +1111,10 @@ export function createHeroScene(
         // reference outro branch: the scene composited raw (no lens/CA/
         // desaturation), a foreground page taking over inside the ring. The
         // fill fades in behind the ring so the onset reads as a hollow donut
-        // over the scene, exactly like the recording, then whites out
+        // over the scene, exactly like the recording, then ink-opens the page
         float fill = smoothstep(0.02, 0.42, t);
         vec3 bg = texture2D(uScene, uv).rgb;
-        vec3 rgb = mix(bg, uWhite, effectiveReveal * fill);
+        vec3 rgb = mix(bg, uFill, effectiveReveal * fill);
         rgb = mix(rgb, vec3(1.0), glowIntensity * 0.5 * edgeFade);
         gl_FragColor = vec4(rgb, 1.0);
       }`,

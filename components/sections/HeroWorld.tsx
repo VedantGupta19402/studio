@@ -198,8 +198,12 @@ export default function HeroWorld() {
   }, [active]);
   useEffect(() => {
     // statement + CTAs stay through the centred hold and the dive, then clear
-    // as the white ring opens. The paper veil and the nav hand off to About:
-    // the veil matches the canvas white, and the nav returns once About covers
+    // as the ring opens. The nav dips out of the dive and returns as the About
+    // page materialises inside the reveal.
+    const smoothstep = (v: number, a: number, b: number) => {
+      const t = Math.min(1, Math.max(0, (v - a) / (b - a)));
+      return t * t * (3 - 2 * t);
+    };
     const onScroll = () => {
       const el = document.getElementById("hero");
       if (!el) return;
@@ -207,18 +211,12 @@ export default function HeroWorld() {
       const range = el.offsetHeight - vh;
       const p = range > 0 ? window.scrollY / range : 0;
       setFinaleFade(p > 0.94);
-      const heroEnd = el.offsetTop + el.offsetHeight - vh;
-      const atEnd = window.scrollY >= heroEnd - 1.5;
-      const intro = document.getElementById("about-intro");
-      const fade = intro
-        ? Math.min(1, Math.max(0, (vh - intro.getBoundingClientRect().top) / vh))
-        : 1;
-      const veilOpacity = atEnd ? 1 - fade : 0;
-      const navOpacity = atEnd ? fade : 1 - Math.min(1, Math.max(0, (p - 0.94) / 0.025));
+      const navOut = smoothstep(p, 0.94, 0.965);
+      const navBack = smoothstep(p, 0.97, 0.99);
+      const navOpacity = Math.max(1 - navOut, navBack);
       // CSS vars survive React re-renders (the nav clock re-renders every
       // second, and an inline style set from here would be wiped by it)
       const root = document.documentElement;
-      root.style.setProperty("--veil-opacity", String(veilOpacity));
       root.style.setProperty("--nav-opacity", String(navOpacity));
       root.toggleAttribute("data-nav-off", navOpacity < 0.05);
     };
@@ -440,11 +438,6 @@ export default function HeroWorld() {
           linkable, running.
         </p>
       </div>
-      <div
-        aria-hidden="true"
-        className="pointer-events-none fixed inset-0 z-[60] bg-[color:var(--paper)]"
-        style={{ opacity: "var(--veil-opacity, 0)" }}
-      />
     </div>
   );
 }
