@@ -92,7 +92,6 @@ export default function HeroWorld() {
   const sceneRef = useRef<HeroSceneHandle | null>(null);
   const [active, setActive] = useState(0);
   const activeRef = useRef(0);
-  const finaleFiredRef = useRef(false);
   const [bursting, setBursting] = useState(false);
   const [finaleFade, setFinaleFade] = useState(false);
   useEffect(() => {
@@ -167,16 +166,6 @@ export default function HeroWorld() {
             if (idx !== activeRef.current) {
               activeRef.current = idx;
               setActive(idx);
-            }
-            // finale flash: whites out the screen as the camera passes the ring
-            // (reference covers the world->content handoff with the flash)
-            const FINALE_FLASH = 0.955;
-            if (self.progress > FINALE_FLASH && !finaleFiredRef.current) {
-              finaleFiredRef.current = true;
-              setBursting(true);
-              setTimeout(() => setBursting(false), 850);
-            } else if (self.progress < 0.9) {
-              finaleFiredRef.current = false;
             }
           },
         });
@@ -302,7 +291,10 @@ export default function HeroWorld() {
         </div>
 
         {/* scroll cue */}
-        <div className="absolute bottom-0 left-1/2 z-10 hidden -translate-x-1/2 sm:block">
+        <div
+          className="absolute bottom-0 left-1/2 z-10 hidden -translate-x-1/2 transition-opacity duration-500 sm:block"
+          style={{ opacity: finaleFade ? 0 : 1 }}
+        >
           <div className="flex flex-col items-center gap-2 pb-4">
             <span className="mono-label text-[color:var(--muted)]">Scroll</span>
             <span className="block h-10 w-px animate-pulse bg-[color:var(--hairline)]" />

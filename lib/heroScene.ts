@@ -622,6 +622,7 @@ export function createHeroScene(
     uTime: { value: 0 },
     uPlanetCenter: { value: PLANET_CENTER.clone() },
     uPlanetRadius: { value: PLANET_RADIUS },
+    uReveal: { value: 0 },
   };
   const domeMat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
@@ -638,6 +639,7 @@ export function createHeroScene(
       uniform float uTime;
       uniform vec3 uPlanetCenter;
       uniform float uPlanetRadius;
+      uniform float uReveal;
       float hash(vec3 p){ return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
       float vnoise(vec3 p){
         vec3 i = floor(p); vec3 f = fract(p); f = f*f*(3.0-2.0*f);
@@ -655,13 +657,24 @@ export function createHeroScene(
         vec3 col = mix(horizon, zenith, smoothstep(0.0, 0.55, h));
         col = mix(mid, col, smoothstep(0.02, 0.22, h));
 
+        // finale: the same sky opens into a deep azure dawn. Palette only —
+        // structure is shared, so the shift reads as light, not a filter.
+        vec3 zenithB  = vec3(0.012, 0.036, 0.082);
+        vec3 midB     = vec3(0.022, 0.062, 0.136);
+        vec3 horizonB = vec3(0.105, 0.245, 0.430);
+        vec3 colB = mix(horizonB, zenithB, smoothstep(0.0, 0.55, h));
+        colB = mix(midB, colB, smoothstep(0.02, 0.22, h));
+        col = mix(col, colB, uReveal);
+
         // two wispy nebula layers: faint violet with a violet-blue edge
         vec3 np = d * 2.3 + vec3(0.0, uTime * 0.003, 0.0);
         float n1 = fbm(np);
         float n2 = fbm(d * 5.1 + vec3(11.3, 4.7, -2.1));
         float neb = smoothstep(0.42, 0.88, n1) * 0.85 + smoothstep(0.52, 0.92, n2) * 0.40;
         neb *= smoothstep(0.0, 0.38, h) * (1.0 - smoothstep(0.75, 1.0, h));
-        col += mix(vec3(0.075, 0.045, 0.165), vec3(0.135, 0.090, 0.245), n2) * neb * 0.70;
+        vec3 nebV = mix(vec3(0.075, 0.045, 0.165), vec3(0.135, 0.090, 0.245), n2);
+        vec3 nebB = mix(vec3(0.055, 0.130, 0.300), vec3(0.160, 0.310, 0.520), n2);
+        col += mix(nebV, nebB, uReveal) * neb * 0.70;
 
         // analytic planet halo: angular distance above the limb (exact for a
         // sphere, independent of orbit position)
@@ -673,8 +686,12 @@ export function createHeroScene(
         float above = max(elev + delta, 0.0);
         float halo = exp(-pow(above / 0.0065, 2.0));
         float wide = exp(-above / 0.016);
-        col += mix(vec3(0.34, 0.25, 0.72), vec3(0.86, 0.89, 1.0), halo) * halo * 0.46;
-        col += vec3(0.16, 0.12, 0.30) * wide * 0.12;
+        vec3 haloV = mix(vec3(0.34, 0.25, 0.72), vec3(0.86, 0.89, 1.0), halo);
+        vec3 haloB = mix(vec3(0.32, 0.60, 1.00), vec3(0.90, 0.97, 1.0), halo);
+        col += mix(haloV, haloB, uReveal) * halo * mix(0.46, 0.64, uReveal);
+        col += mix(vec3(0.16, 0.12, 0.30), vec3(0.12, 0.25, 0.46), uReveal) * wide * 0.12;
+        // broad dawn lift hugging the horizon so the blue world has air
+        col += vec3(0.10, 0.20, 0.38) * exp(-above / 0.085) * uReveal * 0.30;
 
         // limb airglow: a slow band of light just above the atmosphere line that
         // undulates around the horizon so the limb reads alive, not painted
@@ -683,7 +700,7 @@ export function createHeroScene(
         float band = above - (0.022 + 0.007 * sin(azim * 2.0 + uTime * 0.16));
         float aurora = exp(-pow(band / 0.010, 2.0));
         float shimmer = 0.45 + 0.55 * sin(azim * 5.0 - uTime * 0.26 + sin(azim * 2.0 + uTime * 0.11) * 2.0);
-        col += vec3(0.30, 0.33, 0.74) * aurora * shimmer * 0.20;
+        col += mix(vec3(0.30, 0.33, 0.74), vec3(0.36, 0.68, 1.00), uReveal) * aurora * shimmer * 0.20;
         gl_FragColor = vec4(col, 1.0);
       }`,
   });
@@ -827,6 +844,7 @@ export function createHeroScene(
     uTime: { value: 0 },
     uPulse: { value: 0 },
     uWaves: { value: waveTimes },
+    uReveal: { value: 0 },
   };
   const groundMat = new THREE.ShaderMaterial({
     uniforms: groundUniforms,
@@ -840,6 +858,7 @@ export function createHeroScene(
       uniform vec3 uCenter;
       uniform vec2 uCam; uniform vec2 uMark; uniform float uTime; uniform float uPulse;
       uniform float uWaves[4];
+      uniform float uReveal;
       float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       float n2(vec2 p){
         vec2 i = floor(p); vec2 f = fract(p); f = f*f*(3.0-2.0*f);
@@ -867,6 +886,8 @@ export function createHeroScene(
         float grain = n2(q * 1.1) * 0.6 + n2(q * 3.7) * 0.4;
         vec3 col = rock * (0.30 + 1.35 * diff) * (0.78 + grain * 0.44);
         col *= 0.86 + 0.28 * n2(q * 0.55);
+        // finale: the basalt picks up the azure sky (cold bounce from above)
+        col = mix(col, col * vec3(0.80, 0.93, 1.20) + vec3(0.004, 0.014, 0.036), uReveal * 0.8);
         // ridged crater rims catch the key light
         float ridge = 1.0 - abs(2.0 * n2(q * 0.055 + 17.0) - 1.0);
         ridge = pow(ridge, 4.0);
@@ -876,12 +897,14 @@ export function createHeroScene(
         // airlight: the surface recedes into the atmosphere near the limb
         float dist = length(q - uCam);
         float haze = smoothstep(60.0, 320.0, dist);
-        col = mix(col, vec3(0.055, 0.038, 0.100), haze * 0.85);
+        vec3 hazeCol = mix(vec3(0.055, 0.038, 0.100), vec3(0.045, 0.140, 0.310), uReveal);
+        col = mix(col, hazeCol, haze * mix(0.85, 0.92, uReveal));
 
         // razor limb line + soft underglow, exact on the silhouette
         float mu = max(dot(Ng, V), 0.0);
-        col += vec3(0.70, 0.68, 1.0) * pow(1.0 - mu, 40.0) * 1.25;
-        col += vec3(0.30, 0.24, 0.55) * pow(1.0 - mu, 6.0) * 0.35;
+        vec3 rimCol = mix(vec3(0.70, 0.68, 1.0), vec3(0.58, 0.82, 1.0), uReveal);
+        col += rimCol * pow(1.0 - mu, 40.0) * mix(1.25, 1.55, uReveal);
+        col += mix(vec3(0.30, 0.24, 0.55), vec3(0.16, 0.36, 0.66), uReveal) * pow(1.0 - mu, 6.0) * 0.35;
 
         // mark light pool + heartbeat rings live in the surface itself
         float md = length(q - uMark);
@@ -909,6 +932,87 @@ export function createHeroScene(
   planet.renderOrder = -2;
   planet.frustumCulled = false;
   scene.add(planet);
+
+  /* ---------- finale pearl ----------
+     Once the camera is through the ring, the world ahead is open azure. A small
+     iridescent pearl waits in the middle of it, breathing inside a soft halo —
+     the reference's soft reveal grammar, no flash cut. Its placement is on the
+     fly-through axis (MARK_Y, -34) so it lands dead-centre as the walls pass. */
+  const PEARL_POS = new THREE.Vector3(0, MARK_Y, -34);
+  const pearlUniforms = {
+    uTime: { value: 0 },
+    uOpacity: { value: 0 },
+  };
+  const pearlMat = new THREE.ShaderMaterial({
+    uniforms: pearlUniforms,
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+    vertexShader: `varying vec3 vNormalW; varying vec3 vWorld;
+      void main(){
+        vNormalW = normalize(mat3(modelMatrix) * normal);
+        vWorld = (modelMatrix * vec4(position, 1.0)).xyz;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: `precision highp float;
+      varying vec3 vNormalW; varying vec3 vWorld;
+      uniform float uTime; uniform float uOpacity;
+      void main(){
+        vec3 N = normalize(vNormalW);
+        vec3 V = normalize(cameraPosition - vWorld);
+        float fres = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 2.6);
+        vec3 L = normalize(vec3(-0.38, 0.52, 0.76));
+        float lit = clamp(dot(N, L), 0.0, 1.0);
+        vec3 body = mix(vec3(0.34, 0.50, 0.86), vec3(0.97, 0.99, 1.0), pow(lit, 1.9));
+        // thin-film sheen drifting over the surface (pearl, not plastic)
+        float sheen = 0.5 + 0.5 * sin(fres * 9.0 + N.y * 5.0 - uTime * 0.5);
+        vec3 irid = 0.5 + 0.5 * cos(6.28318 * (vec3(0.0, 0.33, 0.67) + fres * 0.62 + uTime * 0.015));
+        vec3 col = mix(body, irid, 0.18 + 0.30 * sheen * (0.40 + fres));
+        col += fres * vec3(0.62, 0.82, 1.0) * 1.2;
+        col += vec3(0.10, 0.16, 0.30) * pow(1.0 - fres, 2.0) * 0.5;
+        // tight specular bead so it reads as a glossy pearl at small scale
+        float spec = pow(clamp(dot(reflect(-L, N), V), 0.0, 1.0), 28.0);
+        col += vec3(1.0) * spec * 1.15;
+        gl_FragColor = vec4(col, uOpacity);
+      }`,
+  });
+  const pearl = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 48), pearlMat);
+  pearl.position.copy(PEARL_POS);
+  pearl.renderOrder = 3;
+  pearl.visible = false;
+  scene.add(pearl);
+
+  const pearlGlowUniforms = {
+    uOpacity: { value: 0 },
+    uTime: { value: 0 },
+  };
+  const pearlGlowMat = new THREE.ShaderMaterial({
+    uniforms: pearlGlowUniforms,
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+    blending: THREE.AdditiveBlending,
+    vertexShader: `varying vec2 vUv;
+      void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `precision highp float;
+      varying vec2 vUv; uniform float uOpacity; uniform float uTime;
+      void main(){
+        float d = length(vUv - 0.5) * 2.0;
+        float core = exp(-pow(d / 0.10, 2.0));
+        float halo = exp(-d * 2.6) * 0.75;
+        float wide = exp(-d * 1.1) * 0.22;
+        float breathe = 0.92 + 0.08 * sin(uTime * 0.6);
+        // hard radial mask: the plane's edge must never show as a seam
+        float mask = 1.0 - smoothstep(0.55, 0.98, d);
+        vec3 col = mix(vec3(0.30, 0.58, 1.0), vec3(0.98, 0.99, 1.0), core);
+        gl_FragColor = vec4(col, (core + halo + wide) * uOpacity * breathe * mask);
+      }`,
+  });
+  const pearlGlow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), pearlGlowMat);
+  pearlGlow.position.copy(PEARL_POS);
+  pearlGlow.renderOrder = 1;
+  pearlGlow.visible = false;
+  scene.add(pearlGlow);
 
   /* shapes: each sampled at its own proportions, then normalized so every
      scene occupies the same frame footprint (the reference orb scale) */
@@ -1164,6 +1268,7 @@ export function createHeroScene(
   let prevHeartbeatFired = false;
   let suppressUntil = 0;
   let springScale = 1;
+  let revealS = 0;
   let elapsed = 0;
   let last = performance.now();
   let raf = 0;
@@ -1405,6 +1510,33 @@ export function createHeroScene(
     groundUniforms.uCam.value.set(camera.position.x, camera.position.z);
     groundUniforms.uMark.value.set(points.position.x, points.position.z);
 
+    // finale reveal: passing through the ring slowly opens the azure world and
+    // brings up the pearl. Scroll drives the target, a short frame-rate lerp
+    // keeps the light change soft even on coarse wheel steps.
+    const fp = progressRef.value;
+    const revealTarget = easeSmooth(Math.min(1, Math.max(0, (fp - 0.87) / 0.11)));
+    revealS += (revealTarget - revealS) * Math.min(1, delta * 3.2);
+    domeUniforms.uReveal.value = revealS;
+    groundUniforms.uReveal.value = revealS;
+
+    const pearlIn = easeSmooth(Math.min(1, Math.max(0, (fp - 0.905) / 0.065)));
+    const pearlGrow = 0.55 + 0.65 * easeSmooth(Math.min(1, Math.max(0, (fp - 0.9) / 0.1)));
+    pearl.visible = pearlIn > 0.001;
+    pearlGlow.visible = pearl.visible;
+    pearlUniforms.uOpacity.value = pearlIn * 0.96;
+    pearlUniforms.uTime.value = elapsed;
+    pearlGlowUniforms.uTime.value = elapsed;
+    pearlGlowUniforms.uOpacity.value = pearlIn * (0.55 + 0.45 * revealS) * 0.9;
+    pearl.position.set(
+      points.position.x,
+      MARK_Y + Math.sin(elapsed * 0.35) * 0.22,
+      PEARL_POS.z,
+    );
+    pearl.scale.setScalar(pearlGrow * (1 + 0.015 * Math.sin(elapsed * 0.9)));
+    pearlGlow.position.copy(pearl.position);
+    pearlGlow.quaternion.copy(camera.quaternion);
+    pearlGlow.scale.setScalar(9 + 5 * pearlIn);
+
     // dust drift
     const dp = dustGeo.attributes.position as THREE.BufferAttribute;
     for (let i = 0; i < DUST_N; i++) {
@@ -1486,6 +1618,10 @@ export function createHeroScene(
       shootMat.dispose();
       planet.geometry.dispose();
       groundMat.dispose();
+      pearl.geometry.dispose();
+      pearlMat.dispose();
+      pearlGlow.geometry.dispose();
+      pearlGlowMat.dispose();
       dustGeo.dispose();
       (dust.material as THREE.Material).dispose();
       renderer.dispose();
