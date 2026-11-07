@@ -1301,7 +1301,7 @@ export function createHeroScene(
     });
   const pointsMat = makePointsMat(1, true);
 
-  const WORLD_SCALE = 6.6; // unit-space sim -> world-size mark (~30% frame width)
+  const WORLD_SCALE = 7.15; // unit-space sim -> world-size mark (~33% frame width)
   const NARROW_SCALE = 0.42;
   const markScale = () => WORLD_SCALE * (camera.aspect < 0.9 ? NARROW_SCALE : 1);
   const markPointSize = () => PARTICLE_SIZE * (camera.aspect < 0.9 ? 0.38 : 1);
