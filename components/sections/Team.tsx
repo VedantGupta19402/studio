@@ -38,32 +38,48 @@ export default function Team() {
         </div>
 
         <div className="grid gap-6 md:grid-cols-3">
-          {TEAM.map((m) => (
+          {TEAM.map((m, i) => (
             <article
               key={m.id}
               data-member
-              className="group rounded-3xl border border-[color:var(--hairline)] bg-[color:var(--ink-2)] p-6 transition-all duration-300 hover:-translate-y-1 hover:border-[color:var(--violet-2)]"
+              className="group relative overflow-hidden rounded-3xl border border-[color:var(--hairline)] bg-[color:var(--ink-2)] p-6 transition-[transform,border-color] duration-300 hover:-translate-y-1 hover:border-[color:var(--violet-2)]"
             >
+              <span
+                aria-hidden="true"
+                className="display pointer-events-none absolute right-5 top-2 text-6xl leading-none text-[color:var(--paper)]/[0.06] transition-colors duration-300 group-hover:text-[color:var(--violet-2)]/25"
+              >
+                {String(i + 1).padStart(2, "0")}
+              </span>
+
               {/* monogram tile — placeholder until portraits land */}
               <div
-                className="flex aspect-[4/5] items-center justify-center rounded-2xl border border-[color:var(--hairline)]"
+                className="relative flex aspect-[4/5] items-center justify-center overflow-hidden rounded-2xl border border-[color:var(--hairline)]"
                 style={{
                   background:
-                    "radial-gradient(90% 90% at 30% 20%, rgba(181,123,255,0.22) 0%, #161224 60%, #0F0D1A 100%)",
+                    "radial-gradient(120% 110% at 22% 0%, rgba(181,123,255,0.26) 0%, #171226 55%, #0F0D1A 100%)",
                 }}
               >
-                <span className="display text-7xl text-[color:var(--paper)]">{m.monogram}</span>
-                <span className="ml-1 h-2 w-2 self-start rounded-full bg-[color:var(--violet-2)] opacity-70 shadow-[0_0_16px_rgba(181,123,255,0.9)]" />
+                <span
+                  aria-hidden="true"
+                  className="absolute inset-0 opacity-[0.05] [background-image:linear-gradient(to_right,#F5EFFF_1px,transparent_1px),linear-gradient(to_bottom,#F5EFFF_1px,transparent_1px)] [background-size:42px_42px]"
+                />
+                <span className="display relative text-[6rem] leading-none text-[color:var(--paper)] transition-transform duration-500 ease-[cubic-bezier(0.23,1,0.32,1)] group-hover:scale-[1.04]">
+                  {m.monogram}
+                </span>
+                <span className="absolute right-4 top-4 h-2 w-2 rounded-full bg-[color:var(--violet-2)] opacity-70 shadow-[0_0_16px_rgba(181,123,255,0.9)]" />
+                <span className="mono-label absolute bottom-4 left-4 text-[color:var(--paper)]/50">
+                  {String(i + 1).padStart(2, "0")} / 03
+                </span>
               </div>
 
-              <h3 className="display mt-6 text-2xl text-[color:var(--paper)]">{m.name}</h3>
+              <h3 className="display relative mt-6 text-2xl text-[color:var(--paper)]">{m.name}</h3>
               <p className="mono-label mt-1 text-[color:var(--violet-2)]">{m.role}</p>
 
               <div className="mt-4 flex flex-wrap gap-2">
                 {m.tags.map((t) => (
                   <span
                     key={t}
-                    className="rounded-full border border-[color:var(--hairline)] px-3 py-1 font-mono text-[0.65rem] tracking-widest text-[color:var(--muted)]"
+                    className="rounded-full border border-[color:var(--hairline)] px-3 py-1 font-mono text-[0.65rem] tracking-widest text-[color:var(--muted)] transition-colors duration-200 group-hover:border-[color:var(--muted)]/40 group-hover:text-[color:var(--paper)]/80"
                   >
                     {t}
                   </span>
@@ -81,11 +97,24 @@ export default function Team() {
                     LinkedIn ↗
                   </a>
                 ) : (
-                  <span className="text-[color:var(--muted)] opacity-60">LinkedIn — soon</span>
+                  <span className="text-[color:var(--muted)]/60">LinkedIn — soon</span>
                 )}
               </div>
             </article>
           ))}
+        </div>
+
+        <div className="mt-14 flex flex-col items-start justify-between gap-5 border-t border-[color:var(--hairline)] pt-8 md:flex-row md:items-center">
+          <p className="mono-label text-[color:var(--muted)]">THE SAME THREE PEOPLE, FROM FIRST CALL TO RELEASE</p>
+          <a
+            href="#contact"
+            className="mono-label group inline-flex items-center gap-2 rounded-full border border-[color:var(--hairline)] px-5 py-3 text-[color:var(--paper)] transition-colors duration-200 hover:border-[color:var(--violet-2)]"
+          >
+            WORK WITH THE STUDIO
+            <span aria-hidden="true" className="transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5">
+              ↗
+            </span>
+          </a>
         </div>
       </div>
     </section>

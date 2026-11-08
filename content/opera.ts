@@ -435,4 +435,14 @@ export const CONTACT = {
   ],
 } as const;
 
+// ---- 404 ----
+export const NOT_FOUND = {
+  kicker: "404 — OFF STAGE",
+  titleLead: "This page never",
+  titleCaps: "shipped.",
+  line: "The link is dead, or the page moved. The work itself is still live — pick up from here.",
+  casesLabel: "FIVE CASES, ALL LIVE",
+  homeLabel: "Back to the studio",
+} as const;
+
 export const PLACEHOLDER_MARKER = "⟨PLACEHOLDER:";

@@ -1,7 +1,7 @@
 "use client";
 // Selected work: one featured case, a 2x2 index, real covers. Emotion's editorial
 // grid grammar with our own assets and copy. Clicking a case opens /projects/[id].
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import Image from "next/image";
 import Link from "next/link";
@@ -108,6 +108,28 @@ export default function Projects() {
   const rest = PRODUCTS.slice(1);
   const live = PRODUCTS.filter((p) => p.status === "LIVE").length;
   const builds = PRODUCTS.length - live;
+  const [preview, setPreview] = useState<Product | null>(null);
+  const [canPreview, setCanPreview] = useState(false);
+  const previewRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const query = window.matchMedia("(hover: hover) and (pointer: fine)");
+    setCanPreview(query.matches);
+    const onChange = (event: MediaQueryListEvent) => setCanPreview(event.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
+
+  const movePreview = (event: ReactPointerEvent<HTMLElement>) => {
+    const element = previewRef.current;
+    if (!element) return;
+    const width = 280;
+    const height = 200;
+    const pad = 16;
+    const x = Math.min(event.clientX + pad, window.innerWidth - width - pad);
+    const y = Math.min(Math.max(event.clientY - height / 2, pad), window.innerHeight - height - pad);
+    element.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+  };
 
   useEffect(() => {
     if (prefersReducedMotion()) return;
@@ -255,6 +277,77 @@ export default function Projects() {
             <ProjectCard key={p.id} p={p} index={i + 2} />
           ))}
         </div>
+
+        {/* scan-first index of every case */}
+        <div data-case-index className="mt-24 md:mt-32">
+          <div className="flex items-end justify-between border-b border-[color:var(--hairline)] pb-4">
+            <p className="mono-label text-[color:var(--violet-2)]">ALL CASES</p>
+            <p className="mono-label text-[color:var(--muted)]">
+              {String(PRODUCTS.length).padStart(2, "0")} / INDEX
+            </p>
+          </div>
+          <ul
+            onPointerMove={canPreview ? movePreview : undefined}
+            onPointerLeave={canPreview ? () => setPreview(null) : undefined}
+          >
+            {PRODUCTS.map((p, i) => (
+              <li key={p.id}>
+                <Link
+                  href={`/projects/${p.id}`}
+                  data-case-link
+                  data-case-label={p.name}
+                  data-case-row
+                  onPointerEnter={canPreview ? () => setPreview(p) : undefined}
+                  className="group grid grid-cols-[2.25rem_1fr_auto_1.5rem] items-baseline gap-x-4 border-b border-[color:var(--hairline)] py-5 transition-colors md:grid-cols-[4rem_1.6fr_1fr_4.5rem_6rem_2rem] md:items-center md:px-2"
+                >
+                  <span className="font-mono text-xs text-[color:var(--muted)] transition-colors group-hover:text-[color:var(--violet-2)]">
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
+                  <span>
+                    <span className="display block text-2xl leading-tight text-[color:var(--paper)] transition-colors group-hover:text-[color:var(--violet-2)] md:text-4xl">
+                      {p.name}
+                    </span>
+                    <span className="mono-label mt-1 block text-[color:var(--muted)] md:hidden">
+                      {p.category}
+                    </span>
+                  </span>
+                  <span className="mono-label hidden text-[color:var(--muted)] md:block">{p.category}</span>
+                  <span className="mono-label hidden text-[color:var(--muted)] md:block">{p.year}</span>
+                  <span
+                    className={`mono-label flex items-center gap-2 ${
+                      p.status === "LIVE" ? "text-[color:var(--ok)]" : "text-[color:var(--violet-2)]"
+                    }`}
+                  >
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        p.status === "LIVE" ? "bg-[color:var(--ok)]" : "bg-[color:var(--violet-2)]"
+                      }`}
+                    />
+                    {p.status}
+                  </span>
+                  <span className="mono-label text-right text-[color:var(--paper)] transition-transform duration-200 group-hover:-translate-y-1 group-hover:translate-x-1">
+                    ↗
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {canPreview ? (
+          <div
+            ref={previewRef}
+            data-case-preview
+            aria-hidden="true"
+            className={`pointer-events-none fixed left-0 top-0 z-[60] h-[200px] w-[280px] overflow-hidden rounded-xl border border-[color:var(--hairline)] bg-[color:var(--ink-2)] shadow-[0_24px_80px_rgba(0,0,0,0.6)] transition-opacity duration-200 ${
+              preview ? "opacity-100" : "opacity-0"
+            }`}
+          >
+            {preview ? (
+              <Image src={preview.cover} alt="" fill sizes="280px" className="object-cover" />
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="mt-20 flex flex-col items-start justify-between gap-6 border-t border-[color:var(--hairline)] pt-8 md:flex-row md:items-center">
           <p className="mono-label text-[color:var(--muted)]">MORE IN ORBIT · NEXT UP, SOON</p>

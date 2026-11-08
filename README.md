@@ -25,6 +25,10 @@ npm run build && npm start
   each statement to its particle shape; wireframe glitch swap; mobile chrome rules.
 - `content/opera.ts` — every string on the site, typed. Placeholders are
   `⟨PLACEHOLDER: …⟩`-shaped (grep-able gate).
+- `lib/sound.ts` — Web Audio engine (no audio files): violet drone bed + a sub
+  thump fired on the same frame as the visual heartbeat; scoped to the hero
+  journey only, default-on with first-gesture unlock, persisted mute via the
+  nav toggle.
 
 ## Quality gates (checked 2026-11-04)
 - 0 console errors (desktop + mobile + reduced-motion pass)

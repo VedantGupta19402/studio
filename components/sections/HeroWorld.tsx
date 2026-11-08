@@ -6,6 +6,7 @@ import { registerGsap, prefersReducedMotion } from "@/lib/gsap";
 import { initLenis, jumpTo } from "@/lib/lenis";
 import { createHeroScene, type HeroSceneHandle } from "@/lib/heroScene";
 import { HERO_VH, journeyProgress } from "@/lib/journey";
+import { operaSound } from "@/lib/sound";
 import { HERO_SCENES, HERO_CTA, SITE } from "@/content/opera";
 
 // progress windows per scene (equal fifths, overlap-free swaps)
@@ -212,6 +213,7 @@ export default function HeroWorld() {
       if (!el) return;
       const range = el.offsetHeight - window.innerHeight;
       const raw = range > 0 ? window.scrollY / range : 0;
+      operaSound.setJourney(raw);
       if (reduced) {
         root.style.setProperty("--chrome-fade", "1");
         root.style.setProperty("--nav-opacity", "1");
@@ -250,7 +252,11 @@ export default function HeroWorld() {
       if (disposed) return;
       const tier = (navigator.hardwareConcurrency || 4) >= 8 ? 16000 : 9000;
       const isMobile = window.innerWidth < 768;
-      scene = createHeroScene(canvas, { reducedMotion: reduced });
+      operaSound.setReduced(reduced);
+      scene = createHeroScene(canvas, {
+        reducedMotion: reduced,
+        onBeat: () => operaSound.beat(),
+      });
       sceneRef.current = scene;
 
       const onResize = () =>
@@ -323,6 +329,7 @@ export default function HeroWorld() {
       cleanupBoot?.();
       scene?.dispose();
       sceneRef.current = null;
+      operaSound.leaveHero();
       stopLenis();
       heroTrigger?.kill();
     };

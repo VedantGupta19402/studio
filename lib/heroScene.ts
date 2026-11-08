@@ -610,7 +610,7 @@ void main() {
 /* ---------- scene assembly ---------- */
 export function createHeroScene(
   canvas: HTMLCanvasElement,
-  opts: { reducedMotion?: boolean } = {},
+  opts: { reducedMotion?: boolean; onBeat?: () => void } = {},
 ): HeroSceneHandle {
   const renderer = new THREE.WebGLRenderer({
     canvas,
@@ -1475,6 +1475,7 @@ export function createHeroScene(
     const suppressed = elapsed < suppressUntil;
     if (inWindow && !prevHeartbeatFired && !suppressed) {
       spawnHeartbeat();
+      opts.onBeat?.();
       pulseIntensity = 1; // sim kick ties ONLY to pulse (fast reference decay)
     }
     prevHeartbeatFired = inWindow;

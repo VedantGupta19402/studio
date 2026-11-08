@@ -38,6 +38,13 @@ export function initLenis(): () => void {
   };
 }
 
+/** pause virtual scroll while an overlay owns the viewport (no-op without Lenis) */
+export function setScrollLocked(locked: boolean): void {
+  if (!lenis) return;
+  if (locked) lenis.stop();
+  else lenis.start();
+}
+
 /** instant jump that keeps Lenis and ScrollTrigger in sync */
 export function jumpTo(y: number): void {
   if (typeof window === "undefined") return;
