@@ -1,8 +1,12 @@
 "use client";
 // Footer/contact — Emotion's giant-type closing + link columns, our copy.
+import { usePathname } from "next/navigation";
 import { CONTACT, SITE } from "@/content/opera";
 
 export default function Footer() {
+  const pathname = usePathname();
+  const onHome = pathname === "/";
+  const resolve = (href: string) => (href.startsWith("#") && !onHome ? `/${href}` : href);
   return (
     <footer id="contact" className="hairline-t bg-[color:var(--ink)] px-6 pb-10 pt-32 md:px-12 md:pt-44">
       <div className="mx-auto max-w-7xl">
@@ -34,7 +38,7 @@ export default function Footer() {
                   {col.links.map((l) => (
                     <li key={l.label + l.href}>
                       <a
-                        href={l.href}
+                        href={resolve(l.href)}
                         target={l.href?.startsWith("http") ? "_blank" : undefined}
                         rel="noopener"
                         className="text-sm text-[color:var(--muted)] transition-colors hover:text-[color:var(--paper)]"
@@ -55,7 +59,7 @@ export default function Footer() {
           </p>
           <p className="mono-label text-[color:var(--muted)]">© 2026 {SITE.name}</p>
           <a
-            href="#hero"
+            href={onHome ? "#hero" : "/"}
             className="mono-label text-[color:var(--muted)] transition-colors hover:text-[color:var(--paper)]"
           >
             BACK TO TOP ↑

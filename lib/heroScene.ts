@@ -1459,7 +1459,7 @@ export function createHeroScene(
   const reduced = opts.reducedMotion ?? false;
   let finaleWarmed = false;
 
-  const tick = () => {
+  const tick = (present = true) => {
     const now = performance.now();
     const delta = Math.min(0.033, Math.max(0.001, (now - last) / 1000));
     last = now;
@@ -1700,6 +1700,11 @@ export function createHeroScene(
     }
     dp.needsUpdate = true;
 
+    if (!present) {
+      raf = requestAnimationFrame(() => tick());
+      return;
+    }
+
     if (revealT > 0.0001) {
       renderer.setRenderTarget(rtFinale);
       renderer.render(scene, camera);
@@ -1724,18 +1729,19 @@ export function createHeroScene(
       renderer.render(scene, camera);
     }
 
-    raf = requestAnimationFrame(tick);
+    raf = requestAnimationFrame(() => tick());
   };
 
   if (reduced) {
-    // static frame: run a few sim steps then render once
-    for (let i = 0; i < 30; i++) tick();
+    // static frame: advance the sim without presenting, then render once —
+    // rendering every step blocks the main thread for seconds on slow GPUs
+    for (let i = 0; i < 30; i++) tick(false);
     cancelAnimationFrame(raf);
     renderer.setRenderTarget(null);
     camera.updateMatrixWorld();
     renderer.render(scene, camera);
   } else {
-    raf = requestAnimationFrame(tick);
+    raf = requestAnimationFrame(() => tick());
   }
 
   return {

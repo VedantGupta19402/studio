@@ -3,7 +3,7 @@
 // five statement scenes with the wireframe-glitch swap (Emotion motion grammar, Opera copy).
 import { useEffect, useRef, useState } from "react";
 import { registerGsap, prefersReducedMotion } from "@/lib/gsap";
-import { initLenis } from "@/lib/lenis";
+import { initLenis, jumpTo } from "@/lib/lenis";
 import { createHeroScene, type HeroSceneHandle } from "@/lib/heroScene";
 import { HERO_VH, journeyProgress } from "@/lib/journey";
 import { HERO_SCENES, HERO_CTA, SITE } from "@/content/opera";
@@ -236,7 +236,6 @@ export default function HeroWorld() {
   useEffect(() => {
     // deterministic start: never restore a mid-journey scroll position
     if ("scrollRestoration" in history) history.scrollRestoration = "manual";
-    window.scrollTo(0, 0);
     const reduced = prefersReducedMotion();
     const { gsap, ScrollTrigger } = registerGsap();
     const stopLenis = initLenis();
@@ -308,6 +307,16 @@ export default function HeroWorld() {
     // the sections below mount before this dynamic chunk inserts the hero,
     // so their triggers measured a short page — re-measure now
     ScrollTrigger.refresh();
+
+    // cross-route deep links ("/#work" from a case page) land on the target
+    const hash = window.location.hash;
+    const deep = hash.length > 1 && hash !== "#hero" ? document.getElementById(hash.slice(1)) : null;
+    if (deep) {
+      const y = deep.getBoundingClientRect().top + window.scrollY;
+      requestAnimationFrame(() => jumpTo(y));
+    } else {
+      window.scrollTo(0, 0);
+    }
 
     return () => {
       disposed = true;
